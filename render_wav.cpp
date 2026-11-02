@@ -111,6 +111,14 @@ int main(int argc, char** argv) {
         if ((e = getenv("BASSMAX_SAT_HI")))  { p.segSatMid = p.segSatHi = (float)atof(e); }
         if ((e = getenv("BASSMAX_TRIM_1K"))) p.trim1k = (float)atof(e);
         if ((e = getenv("BASSMAX_TRIM_9K"))) p.trim9k = (float)atof(e);
+        if ((e = getenv("BASSMAX_ENV_MS")))  p.envMs   = (float)atof(e);
+        if ((e = getenv("BASSMAX_GREL")))    p.gRelMs  = (float)atof(e);
+        if ((e = getenv("BASSMAX_GATT")))    p.gAttMs  = (float)atof(e);
+        if ((e = getenv("BASSMAX_G2REL")))   p.g2RelMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_LOATT")))   p.loAttMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_LOREL")))   p.loRelMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_LIMATT")))  p.limAttMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_LIMREL")))  p.limRelMs = (float)atof(e);
     }
     bassmax::Core core;
     core.setParams(p, (float)w.sr);

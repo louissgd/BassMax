@@ -57,6 +57,14 @@ int main(int argc, char** argv) {
     if (!readWav(argv[1], w)) return 2;
     size_t frames = w.data.size()/w.ch;
     bassmax::Params p; p.drive=drive; p.bass=bass;
+    {
+        const char* e;
+        if ((e=getenv("BASSMAX_PRESET")))  p.preset=(int)atoi(e);
+        if ((e=getenv("BASSMAX_TRIM_9K"))) p.trim9k=(float)atof(e);
+        if ((e=getenv("BASSMAX_TRIM_1K"))) p.trim1k=(float)atof(e);
+        if ((e=getenv("BASSMAX_GREL")))    p.gRelMs=(float)atof(e);
+        if ((e=getenv("BASSMAX_GATT")))    p.gAttMs=(float)atof(e);
+    }
     bassmax::Core core; core.setParams(p,(float)w.sr);
     std::vector<float> buf(frames*2);
     for (size_t i=0;i<frames;++i){ buf[2*i]=w.data[i*w.ch]; buf[2*i+1]=(w.ch>1)?w.data[i*w.ch+1]:w.data[i*w.ch]; }

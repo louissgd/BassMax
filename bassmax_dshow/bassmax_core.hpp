@@ -32,6 +32,10 @@ struct Params {
     float makeupDb = 0.f;   // 总增益 (0 = 用默认)
     float segSatLo = 0.f, segSatMid = 0.f, segSatHi = 0.f;  // 段内饱和上限 (0 = 默认)
     float trim1k = 0.f, trim9k = 0.f;   // EQ 微调 (dB): 叠加到预设的 900Hz 峰 / 9kHz 高架
+    // 时间常数微调 (单位秒, 0 = 用 Tuning 默认值); 主要给离线扫参用
+    float envMs = 0.f, gAttMs = 0.f, gRelMs = 0.f, g2RelMs = 0.f;
+    float loAttMs = 0.f, loRelMs = 0.f;
+    float limAttMs = 0.f, limRelMs = 0.f;
 };
 
 inline float g2l(float db) { return std::exp(db * 0.1151292546f); }
@@ -210,10 +214,11 @@ private:
 // ---- 前瞻峰值保护 (立体声联动, 窗口取最大) ----
 class Limiter {
 public:
-    void setParams(float sr, float ceilDb) {
+    void setParams(float sr, float ceilDb, float attMs = Tuning::LIM_ATT,
+                   float relMs = Tuning::LIM_REL) {
         ceil = ceilDb;
-        att = 1.f - std::exp(-1.f/(Tuning::LIM_ATT*sr));
-        rel = 1.f - std::exp(-1.f/(Tuning::LIM_REL*sr));
+        att = 1.f - std::exp(-1.f/(attMs*sr));
+        rel = 1.f - std::exp(-1.f/(relMs*sr));
         int w = (int)(Tuning::LIM_LOOK*sr);
         if (w < 8) w = 8;
         if ((int)dl.size() != w) { dl.assign(w, 0.f); dr.assign(w, 0.f); }
@@ -259,10 +264,12 @@ public:
             loA[c].clear();  loB[c].clear();
             midA[c].clear(); midB[c].clear();
             for (int k = 0; k < 5; ++k) eq[c][k].clear();
+            peq[c].clear();
         }
         dcx[0]=dcx[1]=dcy[0]=dcy[1]=0.f;
         fLo.clear(); smMid.clear(); smHi.clear();
         gsLo = gsMid = gsHi = 0.f;
+        g2Lo = g2Mid = g2Hi = 0.f;
         lim.clear();
 #ifdef BASSMAX_DEBUG
         dbgG[0]=dbgG[1]=dbgG[2]=0.f;
@@ -283,12 +290,16 @@ public:
             eq[c][2].set(b0,b1,b2,a1,a2);
             make_peak(kFreq[2], 1.0f, ps.p3k, sr, b0,b1,b2,a1,a2);
             eq[c][3].set(b0,b1,b2,a1,a2);
-            make_highshelf(9000.f, ps.hs + p.trim9k, sr, b0,b1,b2,a1,a2);
+            make_highshelf(9000.f, ps.hs, sr, b0,b1,b2,a1,a2);
             eq[c][4].set(b0,b1,b2,a1,a2);
+            // 高音旋钮: 后置 9kHz 高架, 不进电平检测/压缩 -> 纯音色控制, 不改变动态
+            make_highshelf(9000.f, p.trim9k, sr, b0,b1,b2,a1,a2);
+            peq[c].set(b0,b1,b2,a1,a2);
         }
+        postOn = (std::fabs(p.trim9k) > 0.01f);
         eqOn = (std::fabs(ps.ls) + std::fabs(ps.p300) + std::fabs(ps.p900) +
                 std::fabs(ps.p3k) + std::fabs(ps.hs) + std::fabs(p.bass) +
-                std::fabs(p.trim1k) + std::fabs(p.trim9k)) > 0.01f;
+                std::fabs(p.trim1k)) > 0.01f;
 
         // ---- 三段分频 ----
         float lb0,lb1,lb2,la1,la2, hb0,hb1,hb2,ha1,ha2;
@@ -311,12 +322,22 @@ public:
         satLo  = p.segSatLo  > 0.f ? p.segSatLo  : Tuning::SEG_SAT_LO;
         satMid = p.segSatMid > 0.f ? p.segSatMid : Tuning::SEG_SAT_MID;
         satHi  = p.segSatHi  > 0.f ? p.segSatHi  : Tuning::SEG_SAT_HI;
-        fLo.setParams(Tuning::LO_ATT, Tuning::LO_REL, sr);
-        gAtt = 1.f - std::exp(-1.f/(Tuning::G_ATT*sr));
-        gRel = 1.f - std::exp(-1.f/(Tuning::G_REL*sr));
-        smMid.setParams(Tuning::ENV_MS, sr);
-        smHi.setParams(Tuning::ENV_MS, sr);
-        lim.setParams(sr, Tuning::CEILING);
+        const float envMs  = p.envMs  > 0.f ? p.envMs  : Tuning::ENV_MS;
+        const float gAttMs = p.gAttMs > 0.f ? p.gAttMs : Tuning::G_ATT;
+        const float gRelMs = p.gRelMs > 0.f ? p.gRelMs : Tuning::G_REL;
+        const float g2RelMs= p.g2RelMs;             // 0 = 关掉二级平滑
+        const float loA    = p.loAttMs > 0.f ? p.loAttMs : Tuning::LO_ATT;
+        const float loR    = p.loRelMs > 0.f ? p.loRelMs : Tuning::LO_REL;
+        fLo.setParams(loA, loR, sr);
+        gAtt = 1.f - std::exp(-1.f/(gAttMs*sr));
+        gRel = 1.f - std::exp(-1.f/(gRelMs*sr));
+        g2On = (g2RelMs > 0.f);
+        g2Rel = g2On ? (1.f - std::exp(-1.f/(g2RelMs*sr))) : 1.f;
+        smMid.setParams(envMs, sr);
+        smHi.setParams(envMs, sr);
+        lim.setParams(sr, Tuning::CEILING,
+                      p.limAttMs > 0.f ? p.limAttMs : Tuning::LIM_ATT,
+                      p.limRelMs > 0.f ? p.limRelMs : Tuning::LIM_REL);
         reset(sr);
     }
 
@@ -354,9 +375,17 @@ public:
             gsMid += (tMid - gsMid) * (tMid < gsMid ? gAtt : gRel);
             gsHi  += (tHi  - gsHi ) * (tHi  < gsHi  ? gAtt : gRel);
             float gLo = gsLo, gMid = gsMid, gHi = gsHi;
+            if (g2On) {
+                // 二级平滑: 再串一级长释放, 专门压 0.2-2Hz 的慢起伏 (听感「波浪」)
+                g2Lo  += (gLo  - g2Lo ) * (gLo  < g2Lo  ? gAtt : g2Rel);
+                g2Mid += (gMid - g2Mid) * (gMid < g2Mid ? gAtt : g2Rel);
+                g2Hi  += (gHi  - g2Hi ) * (gHi  < g2Hi  ? gAtt : g2Rel);
+                gLo = g2Lo; gMid = g2Mid; gHi = g2Hi;
+            }
             float kLo = g2l(gLo + mkDb), kMid = g2l(gMid + mkDb), kHi = g2l(gHi + mkDb);
             float ol = (softsat(ll*kLo, satLo) + softsat(ml*kMid, satMid) + softsat(hl*kHi, satHi));
             float orr= (softsat(lr*kLo, satLo) + softsat(mr*kMid, satMid) + softsat(hr*kHi, satHi));
+            if (postOn) { ol = peq[0].run(ol); orr = peq[1].run(orr); }
             lim.run(ol, orr);
             buf[2*i]   = softclip(ol);
             buf[2*i+1] = softclip(orr);
@@ -388,12 +417,16 @@ private:
     }
     Biquad sumA[2], sumB[2], hiA[2], hiB[2], loA[2], loB[2], midA[2], midB[2];
     Biquad eq[2][5];
+    Biquad peq[2];
+    bool   postOn = false;
     float dcx[2] = {0,0}, dcy[2] = {0,0};
     Follower fLo;
     Smooth smMid, smHi;
     float gAtt = 0.f, gRel = 0.f, gsLo = 0.f, gsMid = 0.f, gsHi = 0.f;
     float dr = 0.f, mkDb = 0.f;
     float softK = Tuning::SOFT_KNEE;
+    bool  g2On = false;  float g2Rel = 1.f;
+    float g2Lo = 0.f, g2Mid = 0.f, g2Hi = 0.f;
     float satLo = 0.f, satMid = 0.f, satHi = 0.f;
     bool  eqOn = false, bypass = false;
     Limiter lim;

@@ -17,17 +17,17 @@ BEGIN
     CONTROL         "爵士乐", IDC_PRE4, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 58, 42, 48, 15
     CONTROL         "摇滚乐", IDC_PRE5, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 112, 42, 48, 15
 
-    LTEXT           "驱动", IDC_LBL_DRIVE, 8, 68, 30, 10
-    CONTROL         "", IDC_SLD_DRIVE, "msctls_trackbar32", TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 44, 63, 140, 18
-    RTEXT           "0 %", IDC_TXT_DRIVE, 188, 68, 44, 10
+    LTEXT           "低音", IDC_LBL_BASS, 8, 68, 30, 10
+    CONTROL         "", IDC_SLD_BASS, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 63, 140, 18
+    RTEXT           "0.0 dB", IDC_TXT_BASS, 188, 68, 44, 10
 
-    LTEXT           "低音", IDC_LBL_BASS, 8, 88, 30, 10
-    CONTROL         "", IDC_SLD_BASS, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 83, 140, 18
-    RTEXT           "0.0 dB", IDC_TXT_BASS, 188, 88, 44, 10
+    LTEXT           "高音", IDC_LBL_TREBLE, 8, 88, 30, 10
+    CONTROL         "", IDC_SLD_TREBLE, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 83, 140, 18
+    RTEXT           "0.0 dB", IDC_TXT_TREBLE, 188, 88, 44, 10
 
-    LTEXT           "高音", IDC_LBL_TREBLE, 8, 108, 30, 10
-    CONTROL         "", IDC_SLD_TREBLE, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 103, 140, 18
-    RTEXT           "0.0 dB", IDC_TXT_TREBLE, 188, 108, 44, 10
+    LTEXT           "驱动", IDC_LBL_DRIVE, 8, 108, 30, 10
+    CONTROL         "", IDC_SLD_DRIVE, "msctls_trackbar32", TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 44, 103, 140, 18
+    RTEXT           "0 %", IDC_TXT_DRIVE, 188, 108, 44, 10
 
     LTEXT           "驱动: 把安静段拉向满电平, 超过的压回; 0 = 关闭效果", IDC_HINT, 8, 126, 226, 10
     LTEXT           "低音/高音: 100Hz 低架 / 9kHz 高架增益 (dB), 用来补厚度与空气感", IDC_HINT2, 8, 138, 226, 10
@@ -48,17 +48,17 @@ BEGIN
     CONTROL         "爵士乐", IDC_PRE4, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 58, 42, 48, 15
     CONTROL         "摇滚乐", IDC_PRE5, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 112, 42, 48, 15
 
-    LTEXT           "驱动", IDC_LBL_DRIVE, 8, 68, 30, 10
-    CONTROL         "", IDC_SLD_DRIVE, "msctls_trackbar32", TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 44, 63, 140, 18
-    RTEXT           "0 %", IDC_TXT_DRIVE, 188, 68, 44, 10
+    LTEXT           "低音", IDC_LBL_BASS, 8, 68, 30, 10
+    CONTROL         "", IDC_SLD_BASS, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 63, 140, 18
+    RTEXT           "0.0 dB", IDC_TXT_BASS, 188, 68, 44, 10
 
-    LTEXT           "低音", IDC_LBL_BASS, 8, 88, 30, 10
-    CONTROL         "", IDC_SLD_BASS, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 83, 140, 18
-    RTEXT           "0.0 dB", IDC_TXT_BASS, 188, 88, 44, 10
+    LTEXT           "高音", IDC_LBL_TREBLE, 8, 88, 30, 10
+    CONTROL         "", IDC_SLD_TREBLE, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 83, 140, 18
+    RTEXT           "0.0 dB", IDC_TXT_TREBLE, 188, 88, 44, 10
 
-    LTEXT           "高音", IDC_LBL_TREBLE, 8, 108, 30, 10
-    CONTROL         "", IDC_SLD_TREBLE, "msctls_trackbar32", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 44, 103, 140, 18
-    RTEXT           "0.0 dB", IDC_TXT_TREBLE, 188, 108, 44, 10
+    LTEXT           "驱动", IDC_LBL_DRIVE, 8, 108, 30, 10
+    CONTROL         "", IDC_SLD_DRIVE, "msctls_trackbar32", TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 44, 103, 140, 18
+    RTEXT           "0 %", IDC_TXT_DRIVE, 188, 108, 44, 10
 
     LTEXT           "驱动: 把安静段拉向满电平, 超过的压回; 0 = 关闭效果", IDC_HINT, 8, 126, 226, 10
     LTEXT           "低音/高音: 100Hz 低架 / 9kHz 高架增益 (dB), 用来补厚度与空气感", IDC_HINT2, 8, 138, 226, 10
