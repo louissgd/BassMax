@@ -3,6 +3,8 @@
 #include <windows.h>
 #include "resource.h"
 
+IDI_APP ICON "bassmax.ico"
+
 // ---- 属性页 (必须是 WS_CHILD, 由 CBasePropertyPage 放进播放器的属性对话框) ----
 IDD_BASSMAX DIALOGEX 0, 0, 240, 160
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_CAPTION

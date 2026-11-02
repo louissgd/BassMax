@@ -3,6 +3,8 @@
 
 #define IDD_BASSMAX           101
 #define IDD_BASSMAX_POPUP     102
+#define IDI_APP               301   // 托盘/窗口图标
+
 #define IDS_TITLE             201
 #define IDS_APP_TITLE         202
 

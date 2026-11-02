@@ -8,7 +8,7 @@ namespace bassmax {
 
 static CRITICAL_SECTION s_cs;
 static INIT_ONCE        s_once = INIT_ONCE_STATIC_INIT;
-static Settings         s_val = { 0.0f, 0.0f, 0.0f, 0, true };
+static Settings         s_val = { 2.0f, 2.0f, 1.0f, 4, true };   // 默认: 爵士 + 低音+2 + 高音+2 + 驱动100%
 static volatile LONG    s_gen = 0;
 static bool             s_tray = true;
 
@@ -79,6 +79,19 @@ static BOOL CALLBACK InitOnce(PINIT_ONCE, PVOID, PVOID*) {
             swprintf_s(tmp, L"3");   RegSetValueExW(hk, L"DspVer", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
             swprintf_s(tmp, L"%.2f", s_val.drive); RegSetValueExW(hk, L"Drive", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
             swprintf_s(tmp, L"0");   RegSetValueExW(hk, L"Preset", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
+        }
+        // DspVer < 4: 定稿默认值改为「爵士 + 低音 +2 + 高音 +2 + 驱动 100%」, 一次性套用
+        if (ver < 4) {
+            s_val.bass   = 2.0f;
+            s_val.treble = 2.0f;
+            s_val.drive  = 1.0f;
+            s_val.preset = 4;
+            WCHAR tmp[32];
+            swprintf_s(tmp, L"4");    RegSetValueExW(hk, L"DspVer", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
+            swprintf_s(tmp, L"%.1f", s_val.bass);   RegSetValueExW(hk, L"Bass", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
+            swprintf_s(tmp, L"%.1f", s_val.treble); RegSetValueExW(hk, L"Treble", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
+            swprintf_s(tmp, L"%.2f", s_val.drive);  RegSetValueExW(hk, L"Drive", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
+            swprintf_s(tmp, L"%d", s_val.preset);   RegSetValueExW(hk, L"Preset", 0, REG_SZ, (const BYTE*)tmp, (DWORD)((wcslen(tmp)+1)*sizeof(WCHAR)));
         }
         RegCloseKey(hk);
     }

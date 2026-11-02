@@ -23,9 +23,18 @@ void EnsureCs() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = 
 
 INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM w, LPARAM) {
     switch (msg) {
-    case WM_INITDIALOG:
+    case WM_INITDIALOG: {
         bassmax::UiLoadFromSettings(hwnd);
+        HICON hIcon = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
+                                        GetSystemMetrics(SM_CXSMICON),
+                                        GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+        if (hIcon) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        HICON hBig = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
+                                       GetSystemMetrics(SM_CXICON),
+                                       GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+        if (hBig) SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hBig);
         return TRUE;
+    }
     case WM_HSCROLL:
         bassmax::UiUpdateLabels(hwnd);
         bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 实时生效并保存
@@ -57,7 +66,8 @@ INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM w, LPARAM) {
 LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
     case kTrayMsg:
-        if (LOWORD(l) == WM_LBUTTONDBLCLK || LOWORD(l) == WM_RBUTTONUP)
+        // 左键单击 / 右键单击都切出设置窗口 (双击不再需要)
+        if (LOWORD(l) == WM_LBUTTONUP || LOWORD(l) == WM_RBUTTONUP)
             bassmax::ShowTraySettings();
         return 0;
     case WM_CLOSE:
@@ -91,8 +101,11 @@ DWORD WINAPI TrayThread(LPVOID) {
     nid.uID = kTrayId;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = kTrayMsg;
-    nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));   // IDI_APPLICATION
-    wcscpy_s(nid.szTip, L"BassMax 音频增强 (双击打开设置)");
+    nid.hIcon = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
+                                  GetSystemMetrics(SM_CXSMICON),
+                                  GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+    if (!nid.hIcon) nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));   // 兜底
+    wcscpy_s(nid.szTip, L"BassMax 音频增强 (单击打开设置)");
     Shell_NotifyIconW(NIM_ADD, &nid);
 
     MSG m;
@@ -134,10 +147,36 @@ void StopTray() {
     }
 }
 
+namespace {
+// 把窗口摆到当前显示器工作区正中 (避开任务栏)
+void CenterOnScreen(HWND h) {
+    RECT rc; GetWindowRect(h, &rc);
+    int w = rc.right - rc.left, ht = rc.bottom - rc.top;
+    HMONITOR mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    RECT wa;
+    if (GetMonitorInfoW(mon, &mi)) wa = mi.rcWork;
+    else SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    int x = wa.left + ((wa.right - wa.left) - w) / 2;
+    int y = wa.top + ((wa.bottom - wa.top) - ht) / 2;
+    SetWindowPos(h, HWND_TOP, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+}
+}
+
 void ShowTraySettings() {
-    if (g_dlg) { ShowWindow(g_dlg, SW_SHOW); SetForegroundWindow(g_dlg); return; }
+    if (g_dlg) {
+        // 已经开着: 再点一下就收起来
+        if (IsWindowVisible(g_dlg)) { ShowWindow(g_dlg, SW_HIDE); return; }
+        ShowWindow(g_dlg, SW_SHOW);
+        SetForegroundWindow(g_dlg);
+        return;
+    }
     g_dlg = CreateDialogW(g_hInst, MAKEINTRESOURCEW(IDD_BASSMAX_POPUP), nullptr, SettingsDlgProc);
-    if (g_dlg) ShowWindow(g_dlg, SW_SHOW);
+    if (g_dlg) {
+        CenterOnScreen(g_dlg);
+        ShowWindow(g_dlg, SW_SHOW);
+        SetForegroundWindow(g_dlg);
+    }
 }
 
 } // namespace bassmax
