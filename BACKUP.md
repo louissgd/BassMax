@@ -407,6 +407,21 @@ rundll32.exe "…\bassmax_dshow.ax",BassMaxConfig
 不依赖被安全策略拦住的 `rundll32.exe` 命令行 —— 窗口标题「BassMax 音频增强」出现且 `IsWindowVisible`，
 发送 `WM_CLOSE` 后函数返回（1.64 s），消息循环收尾正确。
 
+**f) 独立运行时的外观差异（用户实测发现）：** 同一份对话框，在播放器里是主题化的，
+用系统加载器单独打开却是 Win95 经典外观、字体发虚。两个原因都在宿主：
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| 按钮凸起方块、滑块灰色粗条、无蓝色高亮 | `rundll32.exe` 没有 comctl32 v6 清单，`CreateDialog` 拿到的还是 v5 的窗口类 | `.ax` 内嵌 `bassmax.manifest`（`1 24`），`RunStandaloneSettings` 里 `CreateActCtx` + `ActivateActCtx` 之后**才** `LoadLibrary("comctl32.dll")`（按激活的清单解析到 WinSxS v6）+ `InitCommonControlsEx` + `SetThemeAppProperties(0x7)` |
+| 文字有锯齿 / 像点阵宋体 | `rundll32` 是 DPI-unaware，整窗被系统位图拉伸 | 建窗前 `SetProcessDPIAware()`（进程已决定过就失败，无害） |
+
+关键时序：清单必须赶在 `comctl32` **首次加载之前**激活 —— 所以 `.ax` 不能静态导入 comctl32
+（实测导入表里只有 ole32/user32/kernel32/advapi32/shell32 + VC 运行库），全部走 `LoadLibrary` + `GetProcAddress`。
+若宿主已经把 comctl32 按 v5 加载了，`GetModuleHandleW` 能查到，此时直接放弃（换不掉，也不会更差）。
+
+验证：探针进程（无 v6 清单）调用导出后，`GetWindowTheme(Button)` 与 `GetWindowTheme(msctls_trackbar32)`
+均非空，`PrintWindow` 抓图与播放器内属性页外观一致（蓝底选中按钮、细滑块、ClearType）。
+
 ### 12.3 验收
 
 `settings_test.cpp`（与 `bassmax_settings.cpp` 一起编译，16 项全过）：

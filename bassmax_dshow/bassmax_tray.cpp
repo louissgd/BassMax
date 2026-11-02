@@ -300,6 +300,72 @@ BOOL CALLBACK FindCfgWnd(HWND h, LPARAM) {
     if (g_findTitle && t[0] && wcscmp(t, g_findTitle) == 0) { g_find = h; return FALSE; }
     return TRUE;
 }
+
+// ---- 没有清单的宿主进程里临时把视觉样式和 DPI 感知补上 ----------------------
+// 播放器自己带 comctl32 v6 清单, 属性页/托盘窗口天生就是主题化的;
+// 而 rundll32.exe 没有清单, 直接 CreateDialog 会退回 Win95 经典外观, 且整个进程
+// 处于 DPI 虚拟化状态 -> 文字被位图拉伸发虚。下面三步在独立模式里补齐:
+//   1) SetProcessDPIAware  让 GDI 按真实 DPI 画字 (进程设过就失败, 无害)
+//   2) 激活本模块内嵌的 v6 清单, 再加载 comctl32 -> 解析到 WinSxS 里的 v6
+//   3) SetThemeAppProperties 打开控件与非客户区主题
+class ScopedActCtx {
+public:
+    ~ScopedActCtx() {
+        if (m_active) DeactivateActCtx(0, m_cookie);
+        if (m_h != INVALID_HANDLE_VALUE) ReleaseActCtx(m_h);
+    }
+
+    void Begin() {
+        wchar_t path[MAX_PATH] = {};
+        GetModuleFileNameW(g_hInst, path, MAX_PATH);
+
+        ACTCTXW ac = {};
+        ac.cbSize         = sizeof(ac);
+        ac.dwFlags        = ACTCTX_FLAG_HMODULE_VALID | ACTCTX_FLAG_RESOURCE_NAME_VALID;
+        ac.lpSource       = path;
+        ac.hModule        = (HMODULE)g_hInst;
+        ac.lpResourceName = MAKEINTRESOURCEW(1);      // 1 24 "bassmax.manifest"
+        m_h = CreateActCtxW(&ac);
+        if (m_h == INVALID_HANDLE_VALUE) return;
+        m_active = ActivateActCtx(m_h, &m_cookie) != FALSE;
+    }
+
+private:
+    HANDLE    m_h      = INVALID_HANDLE_VALUE;
+    ULONG_PTR m_cookie = 0;
+    bool      m_active = false;
+};
+
+void EnableVisualStylesForHost() {
+    // 1) DPI: 只在进程还没决定时生效 (失败的返回码无需处理)
+    if (HMODULE u = GetModuleHandleW(L"user32.dll")) {
+        typedef BOOL (WINAPI *PFN_DPIAWARE)(void);
+        PFN_DPIAWARE f = (PFN_DPIAWARE)GetProcAddress(u, "SetProcessDPIAware");
+        if (f) f();
+    }
+
+    // 2) comctl32 若已被宿主按 v5 加载, 再怎么激活清单也换不掉了 —— 直接用现有的
+    if (!GetModuleHandleW(L"comctl32.dll")) {
+        HMODULE c = LoadLibraryW(L"comctl32.dll");        // 在激活的清单下 -> v6
+        if (c) {
+            struct ICCEX { DWORD cbSize; DWORD dwICC; };
+            typedef BOOL (WINAPI *PFN_ICC)(const ICCEX*);
+            PFN_ICC f = (PFN_ICC)GetProcAddress(c, "InitCommonControlsEx");
+            if (f) {
+                ICCEX icc = { sizeof(icc), 0x000000FFu | 0x00004000u | 0x00000004u };
+                f(&icc);                                  // WIN95_CLASSES|STANDARD|BAR
+            }
+        }
+    }
+
+    // 3) 允许控件使用主题 (uxtheme 动态取, 不给 .ax 添静态依赖)
+    HMODULE t = LoadLibraryW(L"uxtheme.dll");
+    if (t) {
+        typedef void (WINAPI *PFN_STAP)(DWORD);
+        PFN_STAP f = (PFN_STAP)GetProcAddress(t, "SetThemeAppProperties");
+        if (f) f(0x7);                                    // NC|CONTROLS|WEBCONTENT
+    }
+}
 }
 
 // 独立设置窗口: 不依赖播放器, 建好窗口后自己跑消息循环, 关闭时返回。
@@ -327,6 +393,11 @@ int RunStandaloneSettings() {
             return 0;
         }
     }
+
+    // 先补样式再建窗口: 清单必须赶在 comctl32 首次加载之前激活, 否则无效
+    ScopedActCtx act;
+    act.Begin();
+    EnableVisualStylesForHost();
 
     g_solo = true;
     HWND h = CreateDialogW(g_hInst, MAKEINTRESOURCEW(IDD_BASSMAX_POPUP), nullptr, SettingsDlgProc);

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- 只用作 CreateActCtx 的资源源: 让没有清单的宿主进程 (rundll32.exe)
+     也能把 comctl32 v6 拉起来, 从而用上视觉样式。
+     注意: DLL 的嵌入式清单不会被执行引擎自动应用, 必须由代码主动激活。 -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity type="win32" name="BassMax.DShow.Filter" version="1.0.0.0"
+                    processorArchitecture="amd64"/>
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls"
+                        version="6.0.0.0" processorArchitecture="*"
+                        publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>

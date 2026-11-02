@@ -158,6 +158,10 @@ rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
 ```
 - 弹出的是同一个设置窗口（`IDD_BASSMAX_POPUP`），改完立刻写注册表，关窗即退出该进程
 - 入口是 `.ax` 自己导出的 `BassMaxConfig`（`extern "C" __declspec(dllexport) void CALLBACK(HWND, HINSTANCE, LPSTR, int)`，即 `rundll32` 的标准签名）
+- **界面和播放器里完全一致**：`.ax` 内嵌了一份 comctl32 v6 清单，独立运行时自己 `CreateActCtx` 激活，
+  再动态加载 `comctl32.dll`（解析到 WinSxS 里的 v6）并 `SetThemeAppProperties`；
+  同时 `SetProcessDPIAware` 关掉 DPI 虚拟化。否则 `rundll32.exe` 没有清单，
+  控件会退回 Win95 经典外观，且整窗被位图拉伸导致字体发虚
 - 重复执行不会开出第二个窗口：已在运行的那个会被拉到前台
 - 装包时 `install.bat` 会把这条命令直接打印出来，复制即用
 
