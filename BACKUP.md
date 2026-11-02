@@ -209,8 +209,30 @@ python wcut.py                               # 重新切试听片段
 python metrics.py                            # 三曲指标
 ```
 
-## 九、git
+## 九、git 与快照
 
-本目录已初始化为 git 仓库，首个提交即 v4 测试基线。
+本目录已初始化为 git 仓库，首个提交 `84752b0` 是最初的 v4 基线，此后每次调参单独提交。
 音频素材、CSV、中间产物、构建缓存均已忽略（见 `.gitignore`）。
-后续每次调参建议单独提交，便于回退对比。
+
+**定稿快照**：`C://Users//Administrator//Desktop//BassMax_定稿_2026-11-02//`（另有同名 zip，21 MB）
+
+```
+bin\  bassmax_dshow.ax            定稿产物（172,544 字节，MD5 a31ae3d0…）
+       bassmax_dshow_已部署.ax    从 MyMPC\Codecs 取回的一份，两者 MD5 一致
+       bassmax.ico / bassmax_off.ico / icon_compare.png
+source\ 完整源码（等价于 git archive 定稿提交）
+试听样本\ 三首开头 20 秒，按定稿默认值渲染（风雨无阻 / Hotel California / Aqua）
+备份说明.md  即本文档
+```
+
+已实测该校验：把 `source\` 单独拷到临时目录，`bash build_tools.sh` 与
+`cd bassmax_dshow && bash build.sh` 都一次通过，产出 `bassmax_dshow.ax` 与快照里那份
+**大小相同、仅 4 个字节不同**（PE 链接时间戳/校验和），说明备份自洽、不依赖本机残留。
+
+**回退方式**（在工作目录里执行）：
+
+```
+git checkout -- .              # 只丢弃未提交的改动
+git reset --hard 2222c22       # 彻底回到定稿提交，文件一起还原
+git log --oneline              # 看历史，挑任意提交
+```
