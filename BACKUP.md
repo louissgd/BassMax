@@ -104,7 +104,36 @@ bash build_tools.sh      # 生成 render_wav.exe / dump_gain.exe
 右键 bassmax_dshow/install.bat → 以管理员身份运行
 ```
 
-## 八、git
+## 八、2026-11-02 清理记录
+
+工程目录从 9.8 GB 清到 0.8 GB，删除的都是可再生成的中间产物与一次性脚本。
+
+**保留**（全部是必要的）：
+
+- 8 个原始素材 wav（Rewrite / 风雨无阻 / Bryan / Eagles 的 原始 + 音效配对）
+- `单文件版\dsp_OctiMax.dll`、`多文件版\Dsp_omxe.dll / dsp_omxw.dll / vis_omx.dll` —— 原版插件本体，标定基准，不可再生
+- 全部源码、`bassmax_dshow.ax`、`bassmax_core_v2/v3.hpp.bak`（旧方案留档）
+- 保留脚本：`metrics.py`、`fit_simple.py`、`fit_joint.py`、`fit_bins.py`、`pair_io.py`、`wcut.py`、`an_wave2.py`、`an_bryan.py`
+- `fit_simple.json`（当前拉伸参数的实际取值）
+
+**已删**（git 历史里都有，`git checkout 84752b0 -- 文件名` 可随时取回）：
+
+- 149 个中间输出 wav（8.4 GB）：整曲渲染、扫参试听、A/B/C 片段
+- 21 个 CSV 追踪日志、3 个 npy、`curve.json` / `dyn.json` / `fit_simple_input.json`
+- 38 个一次性探索脚本（旧拟合/调试/分析脚本）
+- 6 个 exe + 4 个 obj、`calib/`、`calib_out/`、`measure_out/`、`test_signals/`
+- `bassmax_vst3/build_nm/`（290 MB CMake 缓存，VST3 已暂停）
+
+**重建方式**：
+
+```
+bash build_tools.sh                          # render_wav.exe / dump_gain.exe
+cd bassmax_dshow && cp ../bassmax_core.hpp . && bash build.sh   # bassmax_dshow.ax
+python wcut.py                               # 重新切试听片段
+python metrics.py                            # 三曲指标
+```
+
+## 九、git
 
 本目录已初始化为 git 仓库，首个提交即 v4 测试基线。
 音频素材、CSV、中间产物、构建缓存均已忽略（见 `.gitignore`）。
