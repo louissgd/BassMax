@@ -289,6 +289,19 @@ void ShowTraySettings() {
     }
 }
 
+// ---- 找本进程里已经开的设置窗口 (相同标题) ----
+namespace {
+HWND          g_find       = nullptr;
+const wchar_t* g_findTitle = nullptr;
+
+BOOL CALLBACK FindCfgWnd(HWND h, LPARAM) {
+    wchar_t t[128] = {};
+    GetWindowTextW(h, t, 128);
+    if (g_findTitle && t[0] && wcscmp(t, g_findTitle) == 0) { g_find = h; return FALSE; }
+    return TRUE;
+}
+}
+
 // 独立设置窗口: 不依赖播放器, 建好窗口后自己跑消息循环, 关闭时返回。
 int RunStandaloneSettings() {
     InitSettings();
@@ -296,6 +309,23 @@ int RunStandaloneSettings() {
         ShowWindow(g_dlg, SW_SHOW);
         SetForegroundWindow(g_dlg);
         return 0;
+    }
+
+    // 已经开始过一个 (比如连点两次快捷方式)? 拉到前面就行, 别开第二个窗口
+    wchar_t title[128] = {};
+    LoadStringW(g_hInst, IDS_TITLE, title, _countof(title));
+    if (title[0]) {
+        g_findTitle = title;
+        g_find = nullptr;
+        EnumWindows(FindCfgWnd, 0);
+        g_findTitle = nullptr;
+        if (g_find) {
+            if (IsIconic(g_find)) ShowWindow(g_find, SW_RESTORE);
+            ShowWindow(g_find, SW_SHOW);
+            SetForegroundWindow(g_find);
+            FlashWindow(g_find, TRUE);
+            return 0;
+        }
     }
 
     g_solo = true;
@@ -319,12 +349,14 @@ int RunStandaloneSettings() {
 
 } // namespace bassmax
 
-// ---- 独立设置入口 ----------------------------------------------------------
-// 播放器不启动也能调出设置, 两种用法:
-//   1) BassMaxConfig.exe                (随安装包一起放的启动器, 双击即可)
-//   2) rundll32.exe bassmax_dshow.ax,BassMaxConfig
+// ---- 独立设置入口 (rundll32) -----------------------------------------------
+// 播放器没启动时打开设置窗口, 一律走系统自带的 rundll32, 不再附带单独的 EXE:
+//     rundll32.exe "C:\...\bassmax_dshow.ax",BassMaxConfig
 // 用的是同一个 IDD_BASSMAX_POPUP 对话框, 改完立即写注册表;
 // 正在播放的播放器会在 400ms 内从注册表热加载并生效。
-extern "C" __declspec(dllexport) void CALLBACK BassMaxConfig(HWND, HINSTANCE, LPWSTR, int) {
+//
+// 签名按 rundll32 约定: void CALLBACK f(HWND, HINSTANCE, LPSTR, int)
+// (x64 只有一种调用约定, 两个指针/字符串参数直接忽略即可)
+extern "C" __declspec(dllexport) void CALLBACK BassMaxConfig(HWND, HINSTANCE, LPSTR, int) {
     bassmax::RunStandaloneSettings();
 }

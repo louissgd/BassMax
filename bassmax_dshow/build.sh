@@ -32,16 +32,6 @@ echo "==== LINK ===="
 echo "link exit: ${PIPESTATUS[0]}"
 ls -l bassmax_dshow.ax 2>/dev/null
 
-# ---- 独立设置程序 (播放器不启动时也能调设置) ----
-# 目标文件放 obj/exe/, 否则会被上面的 obj/*.obj 通配符带进 DLL 的链接。
-echo "==== CONFIG EXE ===="
-mkdir -p obj/exe
-"$RC" /nologo /fo obj/exe/BassMaxConfig.res /i . BassMaxConfig.rc 2>&1 | tee build_config_rc.log
-echo "rc exit: ${PIPESTATUS[0]}"
-"$CL" /nologo /utf-8 /O2 /EHsc /std:c++17 /MD /DUNICODE /D_UNICODE config_main.cpp obj/exe/BassMaxConfig.res \
-  /FeBassMaxConfig.exe /Foobj/exe/ \
-  /link /SUBSYSTEM:WINDOWS /MANIFEST:NO \
-  user32.lib advapi32.lib 2>&1 | tee build_config.log
-echo "config exit: ${PIPESTATUS[0]}"
-ls -l BassMaxConfig.exe 2>/dev/null
+# 独立设置入口: 不再单独编译 EXE, 由 .ax 导出的 BassMaxConfig 承担:
+#     rundll32.exe bassmax_dshow.ax,BassMaxConfig
 echo "BUILD SCRIPT DONE"

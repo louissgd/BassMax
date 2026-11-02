@@ -40,10 +40,7 @@ echo   MPC-HC   : 选项 - 外部滤镜 - 添加滤镜, 选中 BassMax Audio Enh
 echo   PotPlayer: 按 F5 - 滤镜 - 音频滤镜 - 添加, 选中后设为"始终使用"
 echo 若列表里还没出现, 请先完全退出播放器再打开(播放器只在启动时读取滤镜列表)。
 echo.
-if exist "%~dp0BassMaxConfig.exe" (
-  echo 播放器没开时想改设置: 双击本目录下的 BassMaxConfig.exe
-) else (
-  echo 提示: 把 BassMaxConfig.exe 放到本目录, 播放器没开时也能双击调设置。
-)
+echo 播放器没开时也能改设置 —— 不需要额外 EXE, 走系统自带的 rundll32:
+echo    rundll32.exe "%AX%",BassMaxConfig
 echo.
 pause

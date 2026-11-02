@@ -152,14 +152,17 @@ regsvr32 "C:\...\bassmax_dshow\bassmax_dshow.ax"
 - 播放器退出 / 滤镜销毁时图标自动移除
 - 想彻底不显示：注册表 `HKCU\Software\BassMax` 的 `TrayIcon` 改 `0`，**400ms 内图标就消失**（不用重开播放器；改回 `1` 立刻长回来）
 
-**3) 独立设置程序 `BassMaxConfig.exe`（播放器没启动时用）**
-- 与 `bassmax_dshow.ax` 放在同一目录，双击即可（GUI 子系统，无控制台窗口）
-- 弹出的是同一个设置窗口（`IDD_BASSMAX_POPUP`），改完立刻写注册表
-- 查找 `.ax` 的顺序：自身目录 → `%USERPROFILE%\MyMPC\Codecs\` → 注册表 `HKCR\CLSID\{C41F7D22-…}\InprocServer32`
-- 备用入口：`rundll32.exe bassmax_dshow.ax,BassMaxConfig`（同一导出）
+**3) 播放器没启动时：用系统自带的 `rundll32` 调 `.ax` 的导出（不附带任何额外 EXE）**
+```cmd
+rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
+```
+- 弹出的是同一个设置窗口（`IDD_BASSMAX_POPUP`），改完立刻写注册表，关窗即退出该进程
+- 入口是 `.ax` 自己导出的 `BassMaxConfig`（`extern "C" __declspec(dllexport) void CALLBACK(HWND, HINSTANCE, LPSTR, int)`，即 `rundll32` 的标准签名）
+- 重复执行不会开出第二个窗口：已在运行的那个会被拉到前台
+- 装包时 `install.bat` 会把这条命令直接打印出来，复制即用
 
 > **正在播放时也能改**：滤镜的托盘线程每 400ms 读一遍注册表，`Bass / Treble / Drive / Preset / Enabled / TrayIcon`
-> 任何一项被外部改动（手改注册表、独立设置程序写入）都会在一拍内套用，不需要重开文件或重启播放器。
+> 任何一项被外部改动（手改注册表、从 rundll32 设置窗口写入）都会在一拍内套用，不需要重开文件或重启播放器。
 
 > 说明：托盘图标由滤镜在播放器进程内创建（独立消息线程）。图标资源是 `bassmax.ico`（开启）/ `bassmax_off.ico`（关闭）。
 

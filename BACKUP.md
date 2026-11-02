@@ -386,15 +386,26 @@ OctIMAX 是纯线性 EQ，超声噪声原样穿过，所以它"没事"。
 - 同一拍里按 `TrayEnabled()` 调 `ShowIcon()` / `HideIcon()`，所以 `TrayIcon` 0↔1 **实时**生效；
 - 顺带补了 `TaskbarCreated` 广播处理：资源管理器重启后图标自动重新挂上。
 
-**d) 独立设置程序 `BassMaxConfig.exe`（x64，46,080 字节）。**
-UI 不重写一份——`.ax` 导出 `BassMaxConfig`（`extern "C" __declspec(dllexport)`，`CALLBACK` 签名，
-rundll32 兼容），EXE 只负责找 `.ax`（自身目录 → `%USERPROFILE%\MyMPC\Codecs` → `HKCR\CLSID\...\InprocServer32`）
-然后 `LoadLibrary` + 调用。导出函数内部自建消息循环，关窗即返回。
+**d) 独立设置入口 —— 只用 `.ax` 自己的导出，不附加 EXE。**
+`.ax` 导出 `BassMaxConfig`（`extern "C" __declspec(dllexport)`，签名 `void CALLBACK(HWND, HINSTANCE, LPSTR, int)`，
+即 rundll32 的标准形态；x64 下与 `LPWSTR` 版本 ABI 完全一致）。导出函数内部自建消息循环，关窗即返回：
 
-**e) 顺带修的坑：** `build.sh` 里 `.ax` 链接用 `obj/*.obj` 通配符，
-所以 EXE 的目标文件必须放 `obj/exe/`，否则会被一起链进 DLL。
-另外链接器需要 `mt.exe` 嵌入清单，而本机 SDK 的 bin 不在 PATH —— 改成资源脚本里
-`1 24 "config.manifest"` + `/MANIFEST:NO`，绕开 mt.exe。
+```cmd
+rundll32.exe "…\bassmax_dshow.ax",BassMaxConfig
+```
+
+配同一个 `IDD_BASSMAX_POPUP` 对话框，改完立即写注册表。开头会先 `EnumWindows` 找同名窗口
+（标题取 `IDS_TITLE`），已开过就 `ShowWindow` + `SetForegroundWindow` + `FlashWindow` 拉到前面，
+连点两次不会出现第二个窗口。
+
+> 历史：中途做过一个 46 KB 的 `BassMaxConfig.exe` 启动器（负责定位 .ax 再 LoadLibrary），
+> 但那就是把 rundll32 干的事重写一遍，多一个文件、多一次杀软误报面，随即撤掉。
+> `config_main.cpp` / `BassMaxConfig.rc` / `config.manifest` 已删除，`build.sh` 里对应的
+> 「CONFIG EXE」段一并移除（顺带没了 `obj/exe` 通配符污染 DLL 链接、以及缺 `mt.exe` 需手嵌清单的坑）。
+
+**e) 验收方式：** 用临时探针程序照系统加载器的做法（`LoadLibrary` + `GetProcAddress` + 调用）验证，
+不依赖被安全策略拦住的 `rundll32.exe` 命令行 —— 窗口标题「BassMax 音频增强」出现且 `IsWindowVisible`，
+发送 `WM_CLOSE` 后函数返回（1.64 s），消息循环收尾正确。
 
 ### 12.3 验收
 
@@ -411,11 +422,11 @@ rundll32 兼容），EXE 只负责找 `.ax`（自身目录 → `%USERPROFILE%\My
 | 超范围 `Bass=99` → 钳到 +12 | PASS |
 
 活体验收：
-- `BassMaxConfig.exe` 启动 → 出现窗口标题「BassMax 音频增强」→ `CloseMainWindow` 后进程**正常退出**（消息循环正确收尾）
-- 从 `~\MyMPC\Codecs\` 和 `D:\MyMPC_CG_x86_x64\3.Core\1.Core\` 两处启动均正常
+- 探针调用 `BassMaxConfig` 导出 → 出现窗口标题「BassMax 音频增强」→ `WM_CLOSE` 后正常返回（消息循环正确收尾）
+- 三处副本（源码产物 / 已安装 `~\MyMPC\Codecs\` / D 盘母版 `D:\MyMPC_CG_x86_x64\3.Core\1.Core\`）
+  `bassmax_dshow.ax` 均为 180,736 B，SHA256 前 16 位一致：`18ce74f263f72590`
 - `TrayIcon=0` 状态下创建滤镜（pin_test）**不崩不挂**，退出码 0
-- 三处副本（源码产物 / 已安装 / D 盘母版）`.text` 段 SHA256 一致：`7a64d5d4ca469371…`（63,488 B）
-- `.ax` 导出表新增 `BassMaxConfig`（ordinal 1），其余四个导出不变
-- `BassMaxConfig.exe`：`machine=0x8664`、`subsystem=2 (Windows GUI)`、清单已嵌入（comctl32 v6 + permonitorv2 + asInvoker）
+- `.ax` 导出表：`BassMaxConfig`（ordinal 1）+ `DllGetClassObject` / `DllCanUnloadNow` / `DllRegisterServer` / `DllUnregisterServer`
+- 两处的 `BassMaxConfig.exe` 已从部署目录删除，安装包只带 `.ax` + `install.bat` / `uninstall.bat`
 
 **没动 DSP**：这次只碰设置层与 UI 入口，`bassmax_core.hpp` 一字未改，音色零变化。
