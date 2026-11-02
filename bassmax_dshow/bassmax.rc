@@ -94,11 +94,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "BassMax"
             VALUE "FileDescription",  "BassMax Audio Enhancer (DirectShow audio filter)"
-            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "FileVersion",      BASSMAX_VER_STR4
             VALUE "InternalName",     "bassmax_dshow"
             VALUE "OriginalFilename", "bassmax_dshow.ax"
             VALUE "ProductName",      "BassMax Audio Enhancer"
-            VALUE "ProductVersion",   "1.0.0.0"
+            VALUE "ProductVersion",   BASSMAX_VER_STR4
         END
     END
     BLOCK "VarFileInfo"

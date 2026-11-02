@@ -1,12 +1,12 @@
-# BassMax 1.0.0 — 64 位通用音频增强 (Clean-room)
+# BassMax 1.0.1 — 64 位通用音频增强 (Clean-room)
 
-**版本 1.0.0**（`bassmax_dshow.ax` 的 PE 版本资源同样是 1.0.0.0）· 2026-11-03 · 仅 DirectShow 滤镜
+**版本 1.0.1**（`bassmax_dshow.ax` 的 PE 版本资源同样是 1.0.1.0）· 2026-11-03 · 仅 DirectShow 滤镜
 
 把一个 20 年前的 32 位 Winamp DSP 插件（iZotope 早期的 **OctiMax** 音频增强器）通过「黑盒测量 → 从零重写」的方式，做成可在现代 64 位播放器里运行的通用 DSP。产物命名为 **BassMax**，避免与那个仍在流通的商业老插件重名。
 
 **唯一的产物是 `bassmax_dshow.ax`** —— 一个 64 位 DirectShow 音频变换滤镜，供 **MPC-HC / PotPlayer** 等 DirectShow 播放器使用。VST3 分支已放弃并从工程中移除。
 
-原始插件受版权保护（企业作品，中国约 50 年 / 美国 95 年），因此本项目**不包含、不反编译、不复制**原插件任何代码；仅通过输入/输出音频的测量结果，独立重写等效算法。核心 DSP 见 `bassmax_core.hpp`（唯一权威实现）；离线 A/B 与参数标定用 `render_wav.cpp`（把 WAV 过一遍核心，直接和原插件处理结果做统计比对）。
+原始插件受版权保护（企业作品，中国约 50 年 / 美国 95 年），因此本项目**不包含、不反编译、不复制**原插件任何代码；仅通过输入/输出音频的测量结果，独立重写等效算法(效果只是接近)。核心 DSP 见 `bassmax_core.hpp`（唯一权威实现）；离线 A/B 与参数标定用 `render_wav.cpp`（把 WAV 过一遍核心，直接和原插件处理结果做统计比对）。
 
 > 本文是使用与设计说明；逐次的改动、测量数据与踩坑记录见 [`BACKUP.md`](BACKUP.md)。
 
@@ -34,7 +34,7 @@ Claw/
     ├── bassmax_ui.h          #   属性页/托盘窗口共用的控件读写
     ├── bassmax.rc / resource.h / bassmax.manifest # 对话框、图标、字符串、v6 清单
     ├── dllmain.cpp           #   COM 入口 + 类厂 (滤镜 + 属性页两个 CLSID) + 自注册
-    ├── settings_test.cpp     #   注册表 / 迁移逻辑回归测试 (16 项)
+    ├── settings_test.cpp     #   注册表读写回归测试 (29 项)
     ├── baseclasses/          #   Microsoft DirectShow 基础类 (MIT 样例代码)
     ├── install.bat / uninstall.bat # 管理员一键注册 / 卸载 (带校验)
     ├── build.sh              #   一键构建
@@ -190,7 +190,7 @@ rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
 | DSP 核心 vs 原插件（真实歌曲配对） | 响度轨迹相关 0.90、峰值因数 3.40 vs 3.37、频段偏差 <1.7dB |
 | DirectShow `.ax` 构建 | ✅ x64，导出 5 个符号（4 个 COM 入口 + `BassMaxConfig`），加载/实例化/自注册全部通过 |
 | 吞吐（单核，立体声 float） | 44.1k 184×、96k 83.5×、352.8k 20.4×、705.6k 10.5×、1.4112M 5.3× |
-| 设置层回归 | `settings_test` 16/16（含 DWORD 写法、缺值不采纳、超范围钳位） |
-| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.0.0 |
+| 设置层回归 | `settings_test` 29/29（含 DWORD 写法、缺值不采纳、超范围钳位、旧配置不被改写、全新安装落默认值） |
+| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.1.0 |
 
 *备注：v1 曾把原插件的「安静段抬升」误判成「电平相关 auto-gain 噪声」，用恒定 makeup 把它抹掉了 —— 现在已按配对测量还原成向上压缩。*

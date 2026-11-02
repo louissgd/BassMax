@@ -85,26 +85,15 @@ static BOOL CALLBACK InitOnce(PINIT_ONCE, PVOID, PVOID*) {
     bool     tray = (s_tray != 0);
     bool complete = ReadAll(hk, s, tray);
 
-    // 配置版本迁移 (与旧版一致, 不动)
-    double d = 0;
-    int ver = ReadNum(hk, L"DspVer", &d) ? (int)d : 0;
-
-    // DspVer < 3: 驱动含义改成「电平拉伸量」, 旧值沿用会立刻变响很多 -> 归零
-    if (ver < 3) {
-        s.drive  = 0.0f;
-        s.preset = 0;
-        WriteStr(hk, L"DspVer", L"3");
-        complete = false;
-    }
-    // DspVer < 4: 定稿默认值「爵士 + 低音 +2 + 高音 +2 + 驱动 100%」, 一次性套用
-    if (ver < 4) {
-        s.bass   = 2.0f;
-        s.treble = 2.0f;
-        s.drive  = 1.0f;
-        s.preset = 4;
-        WriteStr(hk, L"DspVer", L"4");
-        complete = false;
-    }
+    // 参数语义迁移已取消 (1.0.1)。
+    // 旧实现依赖 DspVer 标记判断"注册表里那串数是按哪版语义写的", 但那个标记
+    // 只在迁移发生时才会写入 —— 一旦被手工删掉或被清理工具清掉, 下次启动就会
+    // 重跑迁移分支, 把用户的 Bass/Treble/Drive/Preset 覆盖成默认值。删一个值
+    // 等于重置调音, 这个隐患比它解决的问题更麻烦, 所以整套去掉。
+    // 全新安装不需要迁移: 读不到值就用下面的默认值并整套写回;
+    // 已有配置原样沿用, 不再有任何"隐性改写"。
+    // 残留的 DspVer 顺手删掉, 免得注册表里留一个没有代码支撑的项。
+    RegDeleteValueW(hk, L"DspVer");    // 不存在时返回 ERROR_FILE_NOT_FOUND, 忽略
 
     s_val  = s;
     s_tray = tray ? 1 : 0;

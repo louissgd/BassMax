@@ -45,7 +45,53 @@ static void Check(bool cond, const char* what, const char* detail = "") {
     else      { ++g_fail; printf("  FAIL  %s  %s\n", what, detail); }
 }
 
-int wmain() {
+// InitSettings 每个进程只跑一次 (INIT_ONCE), 所以要验证"启动时的读写行为",
+// 只能另起一个进程。子进程把结果写到临时文件, 父进程读回来。
+static void ProbePath(wchar_t* out, DWORD cch) {
+    wchar_t dir[MAX_PATH] = {};
+    GetTempPathW(MAX_PATH, dir);
+    swprintf_s(out, cch, L"%lsbassmax_probe.txt", dir);
+}
+
+static bool RunProbe(float* bass, float* treble, float* drive, int* preset, int* tray) {
+    wchar_t exe[MAX_PATH] = {}, cmd[MAX_PATH + 32] = {}, out[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    swprintf_s(cmd, L"\"%ls\" --probe", exe);
+    ProbePath(out, MAX_PATH);
+
+    STARTUPINFOW        si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi))
+        return false;
+    WaitForSingleObject(pi.hProcess, 15000);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    if (code != 0) return false;
+
+    FILE* fp = nullptr;
+    if (_wfopen_s(&fp, out, L"r") != 0 || !fp) return false;
+    int n = fwscanf_s(fp, L"%f %f %f %d %d", bass, treble, drive, preset, tray);
+    fclose(fp);
+    DeleteFileW(out);
+    return n == 5;
+}
+
+int wmain(int argc, wchar_t** argv) {
+    // ---- 子进程模式: 只做一次 InitSettings, 把结果写到临时文件 ----
+    if (argc > 1 && wcscmp(argv[1], L"--probe") == 0) {
+        Settings s = GetSettings();
+        wchar_t out[MAX_PATH] = {};
+        ProbePath(out, MAX_PATH);
+        FILE* fp = nullptr;
+        if (_wfopen_s(&fp, out, L"w") != 0 || !fp) return 2;
+        fwprintf(fp, L"%.4f %.4f %.4f %d %d\n",
+                 s.bass, s.treble, s.drive, s.preset, TrayEnabled() ? 1 : 0);
+        fclose(fp);
+        return 0;
+    }
+
     printf("=== 初始状态 (InitSettings 之后) ===\n");
     Settings s = GetSettings();
     printf("  Bass=%.2f Treble=%.2f Drive=%.2f Preset=%d Enabled=%d TrayIcon=%d gen=%ld\n",
@@ -102,6 +148,48 @@ int wmain() {
     SetSz(L"Bass", L"99");
     ReloadFromRegistry();
     Check(GetSettings().bass <= 12.01f, "Bass 钳到 +12");
+
+    // ---- 9) 1.0.1 起取消 DspVer 迁移: 旧标记 + 自定义参数必须原样保留 ----
+    // 旧实现里 DspVer 只在迁移时写入, 一旦丢失 (<4) 就会把参数整套覆盖成默认值。
+    // 这里把 DspVer 故意写成老值 1, 再看下一个进程读到的是什么。
+    printf("\n=== 9) 遗留 DspVer + 自定义参数 -> 不得被改写 ===\n");
+    SetSz(L"Bass", L"-5.0");
+    SetSz(L"Treble", L"7.5");
+    SetSz(L"Drive", L"0.35");
+    SetSz(L"Preset", L"1");
+    SetSz(L"DspVer", L"1");                  // 旧版语义标记, 值故意设成老的
+    float pb = 0, pt = 0, pd = 0; int pp = -1, ptray = -1;
+    bool probed = RunProbe(&pb, &pt, &pd, &pp, &ptray);
+    Check(probed, "子进程 InitSettings 跑通");
+    if (probed) {
+        Check(pb > -5.02f && pb < -4.98f, "Bass 保持 -5.0");
+        Check(pt > 7.48f && pt < 7.52f, "Treble 保持 7.5");
+        Check(pd > 0.34f && pd < 0.36f, "Drive 保持 0.35 (旧版会归零)");
+        Check(pp == 1, "Preset 保持 1 (旧版会改成 4)");
+    }
+    Check(!HasVal(L"DspVer"), "DspVer 已被清掉, 注册表无遗留项");
+
+    printf("\n=== 10) 全新安装 (整键删除) -> 落到 1.0.1 默认值 ===\n");
+    {
+        HKEY hk = nullptr;
+        if (RegDeleteTreeW(HKEY_CURRENT_USER, kKey) == ERROR_SUCCESS) {
+            float nb = 0, nt = 0, nd = 0; int np = -1, ntray = -1;
+            bool p2 = RunProbe(&nb, &nt, &nd, &np, &ntray);
+            Check(p2, "清空后子进程跑通");
+            if (p2) {
+                Check(nb > 1.98f && nb < 2.02f, "Bass 默认 +2.0");
+                Check(nt > 1.98f && nt < 2.02f, "Treble 默认 +2.0");
+                Check(nd > 0.99f && nd < 1.01f, "Drive 默认 1.00");
+                Check(np == 4, "Preset 默认 4 (爵士)");
+                Check(ntray == 1, "TrayIcon 默认 1");
+            }
+            Check(HasVal(L"Bass") && HasVal(L"Treble") && HasVal(L"Drive") &&
+                  HasVal(L"Preset") && HasVal(L"Enabled") && HasVal(L"TrayIcon"),
+                  "六项值已显性写回");
+        } else {
+            Check(false, "删除注册表键失败");
+        }
+    }
 
     // 还原
     Settings r = orig;
