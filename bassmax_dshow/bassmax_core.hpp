@@ -36,6 +36,8 @@ struct Params {
     float envMs = 0.f, gAttMs = 0.f, gRelMs = 0.f, g2RelMs = 0.f;
     float loAttMs = 0.f, loRelMs = 0.f;
     float limAttMs = 0.f, limRelMs = 0.f;
+    float envHiMs = 0.f, gAttHiMs = 0.f, gRelHiMs = 0.f;   // HI 段专用 (0 = 同全段)
+    float envMidMs = 0.f, gAttMidMs = 0.f, gRelMidMs = 0.f; // MID 段专用 (0 = 同全段)
 };
 
 inline float g2l(float db) { return std::exp(db * 0.1151292546f); }
@@ -171,6 +173,10 @@ struct Tuning {
     // 2026-11-02 用户试听: 250ms 在「风雨无阻」吉他连续分解和弦下仍有起伏,
     //   400ms 明显更稳且不发闷, 定为默认。
     static constexpr float G_ATT = 0.030f, G_REL = 0.400f;
+    // HI 段单独用更快的检测与释放。高频瞬态短、混响尾巴长, 用 400ms 释放会把尾巴整体抬起来,
+    // 听感就是「回音变重」。实测电子乐(Aqua): 高频 80ms 衰减 6.4dB(慢释放) vs 参考 10.5dB;
+    // 改成 10ms 窗 + 150ms 释放后为 10.6dB, 与参考一致。低频/中频仍用 400ms, 吉他弦音的稳定不受影响。
+    static constexpr float ENV_HI = 0.010f, G_ATT_HI = 0.020f, G_REL_HI = 0.150f;
 
     // 末端: 前瞻削峰 + 软保护
     static constexpr float LIM_LOOK = 0.005f;
@@ -335,8 +341,18 @@ public:
         gRel = 1.f - std::exp(-1.f/(gRelMs*sr));
         g2On = (g2RelMs > 0.f);
         g2Rel = g2On ? (1.f - std::exp(-1.f/(g2RelMs*sr))) : 1.f;
-        smMid.setParams(envMs, sr);
-        smHi.setParams(envMs, sr);
+        const float envHiMs  = p.envHiMs  > 0.f ? p.envHiMs  : Tuning::ENV_HI;
+        const float gAttHiMs = p.gAttHiMs > 0.f ? p.gAttHiMs : Tuning::G_ATT_HI;
+        const float gRelHiMs = p.gRelHiMs > 0.f ? p.gRelHiMs : Tuning::G_REL_HI;
+        const float envMidMs  = p.envMidMs  > 0.f ? p.envMidMs  : envMs;
+        const float gAttMidMs = p.gAttMidMs > 0.f ? p.gAttMidMs : gAttMs;
+        const float gRelMidMs = p.gRelMidMs > 0.f ? p.gRelMidMs : gRelMs;
+        smMid.setParams(envMidMs, sr);
+        smHi.setParams(envHiMs, sr);
+        gAttMid = 1.f - std::exp(-1.f/(gAttMidMs*sr));
+        gRelMid = 1.f - std::exp(-1.f/(gRelMidMs*sr));
+        gAttHi = 1.f - std::exp(-1.f/(gAttHiMs*sr));
+        gRelHi = 1.f - std::exp(-1.f/(gRelHiMs*sr));
         lim.setParams(sr, Tuning::CEILING,
                       p.limAttMs > 0.f ? p.limAttMs : Tuning::LIM_ATT,
                       p.limRelMs > 0.f ? p.limRelMs : Tuning::LIM_REL);
@@ -374,8 +390,8 @@ public:
             float tMid = dr * stretch(Tuning::MID, vMid);
             float tHi = dr * stretch(Tuning::HI,  vHi);
             gsLo  += (tLo  - gsLo ) * (tLo  < gsLo  ? gAtt : gRel);
-            gsMid += (tMid - gsMid) * (tMid < gsMid ? gAtt : gRel);
-            gsHi  += (tHi  - gsHi ) * (tHi  < gsHi  ? gAtt : gRel);
+            gsMid += (tMid - gsMid) * (tMid < gsMid ? gAttMid : gRelMid);
+            gsHi  += (tHi  - gsHi ) * (tHi  < gsHi  ? gAttHi : gRelHi);
             float gLo = gsLo, gMid = gsMid, gHi = gsHi;
             if (g2On) {
                 // 二级平滑: 再串一级长释放, 专门压 0.2-2Hz 的慢起伏 (听感「波浪」)
@@ -425,6 +441,8 @@ private:
     Follower fLo;
     Smooth smMid, smHi;
     float gAtt = 0.f, gRel = 0.f, gsLo = 0.f, gsMid = 0.f, gsHi = 0.f;
+    float gAttHi = 0.f, gRelHi = 0.f;
+    float gAttMid = 0.f, gRelMid = 0.f;
     float dr = 0.f, mkDb = 0.f;
     float softK = Tuning::SOFT_KNEE;
     bool  g2On = false;  float g2Rel = 1.f;

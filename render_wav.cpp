@@ -119,6 +119,11 @@ int main(int argc, char** argv) {
         if ((e = getenv("BASSMAX_LOREL")))   p.loRelMs = (float)atof(e);
         if ((e = getenv("BASSMAX_LIMATT")))  p.limAttMs = (float)atof(e);
         if ((e = getenv("BASSMAX_LIMREL")))  p.limRelMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_ENVHI")))   p.envHiMs  = (float)atof(e);
+        if ((e = getenv("BASSMAX_GRELHI")))  p.gRelHiMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_GATHI")))   p.gAttHiMs = (float)atof(e);
+        if ((e = getenv("BASSMAX_ENVMID")))  p.envMidMs  = (float)atof(e);
+        if ((e = getenv("BASSMAX_GRELMID"))) p.gRelMidMs = (float)atof(e);
     }
     bassmax::Core core;
     core.setParams(p, (float)w.sr);
