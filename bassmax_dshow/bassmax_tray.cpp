@@ -8,6 +8,7 @@
 #include "bassmax_tray.h"
 #include "bassmax_ui.h"
 #include "resource.h"
+#include "version.h"
 #include <shellapi.h>
 
 extern HINSTANCE g_hInst;
@@ -44,8 +45,8 @@ HICON LoadAppIcon(int id, int cx, int cy) {
 
 void SetTip(bool on) {
     wcscpy_s(g_nid.szTip, on
-             ? L"BassMax · 已开启\n左键设置   右键关闭"
-             : L"BassMax · 已关闭\n左键设置   右键开启");
+             ? L"BassMax " BASSMAX_VER_STR_W L" · 已开启\n左键设置   右键关闭"
+             : L"BassMax " BASSMAX_VER_STR_W L" · 已关闭\n左键设置   右键开启");
 }
 
 // 真正把图标放进任务栏 (托盘线程)

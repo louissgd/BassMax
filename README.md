@@ -1,20 +1,14 @@
-# BassMax — 64 位通用重写 (Clean-room)
+# BassMax 1.0.0 — 64 位通用音频增强 (Clean-room)
 
-> **⚠ 本文是早期设计文档，部分内容已过时**（写于 v1 阶段：旧 10 点曲线表、驱动以百分比粗调、
-> 曾计划同时出 VST3、目录里提到的 `bassmax_model.py` / `verify.py` / `measure_out/` /
-> `test_signals/` 已在清理中删除）。
->
-> **当前实况以 [`BACKUP.md`](BACKUP.md) 为准**：简化拉伸模型、三段分段参数、高频独立时间常数、
-> 6 个 EQ 预设、驱动 0–10 分档、定稿默认值、注册表项、三曲评测、快照与回退方式。
-> 本文的「为什么是动态而不是均衡+限幅」「构建 / 注册 / 在播放器里使用」等章节仍然有效。
-
+**版本 1.0.0**（`bassmax_dshow.ax` 的 PE 版本资源同样是 1.0.0.0）· 2026-11-03 · 仅 DirectShow 滤镜
 
 把一个 20 年前的 32 位 Winamp DSP 插件（iZotope 早期的 **OctiMax** 音频增强器）通过「黑盒测量 → 从零重写」的方式，做成可在现代 64 位播放器里运行的通用 DSP。产物命名为 **BassMax**，避免与那个仍在流通的商业老插件重名。
 
-- **DirectShow 音频变换滤镜 (`bassmax_dshow.ax`)** —— 供 **MPC-HC / PotPlayer** 等 DirectShow 播放器
-- **VST3 插件 (`BassMax.vst3`)** —— 供 **foobar2000** 及任何 VST3 宿主
+**唯一的产物是 `bassmax_dshow.ax`** —— 一个 64 位 DirectShow 音频变换滤镜，供 **MPC-HC / PotPlayer** 等 DirectShow 播放器使用。VST3 分支已放弃并从工程中移除。
 
 原始插件受版权保护（企业作品，中国约 50 年 / 美国 95 年），因此本项目**不包含、不反编译、不复制**原插件任何代码；仅通过输入/输出音频的测量结果，独立重写等效算法。核心 DSP 见 `bassmax_core.hpp`（唯一权威实现）；离线 A/B 与参数标定用 `render_wav.cpp`（把 WAV 过一遍核心，直接和原插件处理结果做统计比对）。
+
+> 本文是使用与设计说明；逐次的改动、测量数据与踩坑记录见 [`BACKUP.md`](BACKUP.md)。
 
 ---
 
@@ -22,34 +16,29 @@
 
 ```
 Claw/
+├── README.md                 # 本文件
+├── BACKUP.md                 # 改动记录 / 测量数据 / 踩坑
 ├── bassmax_core.hpp          # ★ DSP 核心 (header-only, 框架无关) 唯一权威实现
-├── bassmax_model.py          # Python 参考模型 (与 C++ 完全对应)
-├── verify.py                 # 参考模型 vs 原始插件实测 的对比脚本
-├── measure_out/              # 原始插件对各类测试信号的实测输出 (黑盒)
-├── test_signals/             # 合成测试信号 (脉冲/正弦/噪声/方波/扫频/直流)
+├── render_wav.cpp            # 离线 A/B: 把 WAV 过一遍核心, 与原插件输出做统计比对
+├── pair_io.py / metrics.py / wcut.py   # A/B 素材切分与指标统计
+├── make_icon.py              # 生成 bassmax.ico / bassmax_off.ico
+├── build_tools.sh            # 编译上面这些命令行工具
 │
-├── bassmax_dshow/            # ★ DirectShow 滤镜工程
-│   ├── bassmax_core.hpp      #   (核心副本)
-│   ├── bassmax_filter.h/.cpp #   CTransformFilter 子类, 格式协商/PCM↔float 转换, ISpecifyPropertyPages
-│   ├── bassmax_page.h/.cpp   #   属性页 (CBasePropertyPage)
-│   ├── bassmax_tray.h/.cpp   #   托盘图标 + 设置窗口
-│   ├── bassmax_settings.h/.cpp # 全局参数 (线程安全 + 注册表持久化 + 热更新代号)
-│   ├── bassmax_ui.h          #   属性页/托盘窗口共用的控件读写
-│   ├── bassmax.rc / resource.h # 对话框与字符串资源
-│   ├── dllmain.cpp           #   COM 入口 + 类厂 (滤镜 + 属性页两个 CLSID) + 自注册
-│   ├── baseclasses/          #   Microsoft DirectShow 基础类 (MIT 样例代码)
-│   ├── install.bat / uninstall.bat # 管理员一键注册 / 卸载 (带校验)
-│   ├── build.sh              #   一键构建
-│   └── bassmax_dshow.ax      #   ★ 构建产物 (64 位)
-│
-└── bassmax_vst3/             # ★ VST3 工程 (JUCE)
-    ├── Source/
-    │   ├── bassmax_core.hpp
-    │   ├── PluginProcessor.h/.cpp   # AudioProcessor: 交错↔planar, 参数, 状态
-    │   └── PluginEditor.h/.cpp      # 界面: 低音 / 驱动 两个滑块
-    ├── CMakeLists.txt        #   juce_add_plugin, 仅 VST3 (可加 Standalone)
-    ├── build.sh              #   一键构建 (NMake + 本地 JUCE)
-    └── build_nm/BassMax_artefacts/Release/VST3/BassMax.vst3   # ★ 构建产物 (64 位)
+└── bassmax_dshow/            # ★ DirectShow 滤镜工程
+    ├── version.h             #   版本号唯一来源 (rc 与代码共用)
+    ├── bassmax_core.hpp      #   (核心副本, 构建时用这份)
+    ├── bassmax_filter.h/.cpp #   CTransformFilter 子类, 格式协商/PCM↔float 转换, ISpecifyPropertyPages
+    ├── bassmax_page.h/.cpp   #   属性页 (CBasePropertyPage)
+    ├── bassmax_tray.h/.cpp   #   托盘图标 + 设置窗口 + 独立设置入口
+    ├── bassmax_settings.h/.cpp # 全局参数 (线程安全 + 注册表持久化 + 热更新代号)
+    ├── bassmax_ui.h          #   属性页/托盘窗口共用的控件读写
+    ├── bassmax.rc / resource.h / bassmax.manifest # 对话框、图标、字符串、v6 清单
+    ├── dllmain.cpp           #   COM 入口 + 类厂 (滤镜 + 属性页两个 CLSID) + 自注册
+    ├── settings_test.cpp     #   注册表 / 迁移逻辑回归测试 (16 项)
+    ├── baseclasses/          #   Microsoft DirectShow 基础类 (MIT 样例代码)
+    ├── install.bat / uninstall.bat # 管理员一键注册 / 卸载 (带校验)
+    ├── build.sh              #   一键构建
+    └── bassmax_dshow.ax      #   ★ 构建产物 (64 位, 183,808 B)
 ```
 
 ---
@@ -194,35 +183,14 @@ rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
 
 ---
 
-## 四、VST3 插件 (foobar2000 等)
-
-### 构建（本机已装 JUCE 于 `D:\Program Files\JUCE`）
-```bash
-cd bassmax_vst3
-bash build.sh          # NMake + 本地 JUCE；可加 JUCE_DIR=... 覆盖
-# 产物: build_nm/BassMax_artefacts/Release/VST3/BassMax.vst3
-```
-- CMake 用 **NMake Makefiles** 生成器 + 显式 `cl.exe`/`nmake.exe`（VS 生成器在本机沙箱下探测不到工具集）。
-- 源码含中文注释，**必须** `/utf-8` 编译（否则 GBK 误读注释会把后续代码“吃掉”）。CMake 中已加 `target_compile_options(BassMax PRIVATE /utf-8)`。
-
-### 安装 / 使用
-把 `BassMax.vst3` 整个文件夹复制到：
-- 通用 VST3 目录：`C:\Program Files\Common Files\VST3\`
-- 或 foobar2000 的 VST 目录（视你的 VST 组件而定）
-
-**foobar2000** 使用 VST：`Preferences → Playback → DSP Manager`（或安装 VST 适配组件）→ 添加 VST/VST3 → 选择 BassMax。界面上有 **低音(Bass, 0–12dB)** 与 **驱动(Drive, 0–1)** 两个滑块；参数会随工程状态保存。
-
-### 冒烟测试（已验证）
-`GetPluginFactory` 返回有效工厂；DLL 为 x64，导出 `GetPluginFactory/InitDll/ExitDll`。
-
----
-
-## 五、验证结果汇总
+## 四、验证结果汇总
 
 | 项目 | 结果 |
 |---|---|
 | DSP 核心 vs 原插件（真实歌曲配对） | 响度轨迹相关 0.90、峰值因数 3.40 vs 3.37、频段偏差 <1.7dB |
-| DirectShow .ax 构建 | ✅ x64，导出 4 个 COM 入口，加载/实例化/自注册全部通过 |
-| VST3 构建 | ✅ x64，导出 VST3 入口，加载/取工厂通过 |
+| DirectShow `.ax` 构建 | ✅ x64，导出 5 个符号（4 个 COM 入口 + `BassMaxConfig`），加载/实例化/自注册全部通过 |
+| 吞吐（单核，立体声 float） | 44.1k 184×、96k 83.5×、352.8k 20.4×、705.6k 10.5×、1.4112M 5.3× |
+| 设置层回归 | `settings_test` 16/16（含 DWORD 写法、缺值不采纳、超范围钳位） |
+| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.0.0 |
 
 *备注：v1 曾把原插件的「安静段抬升」误判成「电平相关 auto-gain 噪声」，用恒定 makeup 把它抹掉了 —— 现在已按配对测量还原成向上压缩。*

@@ -445,3 +445,45 @@ rundll32.exe "…\bassmax_dshow.ax",BassMaxConfig
 - 两处的 `BassMaxConfig.exe` 已从部署目录删除，安装包只带 `.ax` + `install.bat` / `uninstall.bat`
 
 **没动 DSP**：这次只碰设置层与 UI 入口，`bassmax_core.hpp` 一字未改，音色零变化。
+
+---
+
+## 13. 1.0.0 定版（2026-11-03）
+
+### 13.1 版本号落地
+
+- 新增 `bassmax_dshow/version.h` 作为唯一来源：`BASSMAX_VER_MAJOR/MINOR/PATCH/BUILD = 1/0/0/0`，
+  字符串宏 `BASSMAX_VER_STR`（`"1.0.0"`）与 `BASSMAX_VER_STR_W`。
+- `bassmax.rc` 增加 `VS_VERSION_INFO` 资源（`FILETYPE 0x2L` = VFT_DLL，Translation 0x804/1200），
+  字段 `FileVersion` / `ProductVersion` = `1.0.0.0`，`ProductName` = BassMax Audio Enhancer。
+  资源管理器 → 属性 → 详细信息可直接看到；脚本可用
+  `(Get-Item bassmax_dshow.ax).VersionInfo.FileVersion` 核对部署版本。
+- 托盘提示文字带上版本：`BassMax 1.0.0 · 已开启 / 已关闭`（鼠标悬停即可确认当前装的是哪版）。
+- 注意：注册表 `DspVer` **不是**产品版本，它是 DSP 参数迁移版本（当前 4），
+  改动会触发参数迁移逻辑，所以版本号没有复用它。
+
+### 13.2 收尾清理
+
+删除（源码可从 git 历史恢复）：
+
+| 类别 | 文件 |
+|---|---|
+| 一次性基准/诊断工具 | `bench.cpp`、`limiter_eq.cpp`、`diag_rate.cpp`、`dump_gain.cpp`、`biquad_prec.cpp`、`us_test.cpp`、`pin_test.cpp` 及其 `.exe` |
+| DSP 调参脚本 | `analyze.py`、`dsd_probe.py`、`dsf_psd.py`、`dsd256_check.py`、`fit_bins.py`、`fit_joint.py`、`fit_simple.py/.json` |
+| 旧快照 | `bassmax_core_v2.hpp.bak`、`bassmax_core_v3.hpp.bak`、`bassmax_dshow.ax.bak`、两处部署目录的 `.bak_20261103` |
+| 构建中间物 | `bassmax_dshow/obj/`、`build_*.log`、`*.exp`、`*.lib`、`settings_test.exe` |
+| 图标预览 | `bassmax_icon_preview.png`、`bassmax_icon_off_preview.png`、`icon_compare.png` |
+| **VST3 分支** | 整个 `bassmax_vst3/` 目录（含 `CMakeLists.txt`、`Source/`、`build.sh`、`test_vst3.cpp`） |
+
+保留：`bassmax_core.hpp`、`bassmax_dshow/`（源码 + `settings_test.cpp` 回归）、
+`render_wav.cpp` + `pair_io.py` / `metrics.py` / `wcut.py`（A/B 链）、`make_icon.py`、`build_tools.sh`。
+
+VST3 分支此前只是并行验证，DSP 核心与 DirectShow 版共用同一份 `bassmax_core.hpp`；
+移除后项目只剩一个产物，README 已相应改写为 1.0.0 的正式自述。
+
+### 13.3 定版快照
+
+- `.ax` 183,808 B，`machine=0x8664`，`FileVersion 1.0.0.0`，SHA256 前 16 位见下节。
+- 三处一致：源码产物 / `~\MyMPC\Codecs\` / `D:/MyMPC_CG_x86_x64/3.Core/1.Core/`。
+- 归档：`_release/BassMax_1.0.0_2026-11-03/`（README.md + BACKUP.md + bin/ + src/ + tools/）
+  与同名 `.zip`；git 打标签 `v1.0.0`。
