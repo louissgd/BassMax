@@ -31,6 +31,7 @@ struct Params {
     int   preset = 0;       // EQ 预设 0..5
     float makeupDb = 0.f;   // 总增益 (0 = 用默认)
     float segSatLo = 0.f, segSatMid = 0.f, segSatHi = 0.f;  // 段内饱和上限 (0 = 默认)
+    float trim1k = 0.f, trim9k = 0.f;   // EQ 微调 (dB): 叠加到预设的 900Hz 峰 / 9kHz 高架
 };
 
 inline float g2l(float db) { return std::exp(db * 0.1151292546f); }
@@ -131,8 +132,8 @@ inline const Preset* presets() {
         {  2.5f,  0.5f,  0.0f, -1.0f, -3.5f, "古典乐" },
         {  6.0f,  1.5f,  2.5f,  3.0f,  1.5f, "俱乐部" },
         { -1.0f,  5.0f,  5.5f,  1.0f, -1.0f, "流行乐" },
-        {  3.0f,  1.5f, -1.0f,  2.0f,  3.5f, "爵士乐" },
-        {  7.0f, -3.5f,  1.5f,  6.5f,  8.0f, "摇滚乐" },
+        {  3.0f,  1.5f, -1.0f,  2.0f,  3.5f, "摇滚乐" },
+        {  7.0f, -3.5f,  1.5f,  6.5f,  8.0f, "爵士乐" },
     };
     return k;
 }
@@ -278,15 +279,16 @@ public:
             eq[c][0].set(b0,b1,b2,a1,a2);
             make_peak(kFreq[0], 1.0f, ps.p300, sr, b0,b1,b2,a1,a2);
             eq[c][1].set(b0,b1,b2,a1,a2);
-            make_peak(kFreq[1], 1.0f, ps.p900, sr, b0,b1,b2,a1,a2);
+            make_peak(kFreq[1], 1.0f, ps.p900 + p.trim1k, sr, b0,b1,b2,a1,a2);
             eq[c][2].set(b0,b1,b2,a1,a2);
             make_peak(kFreq[2], 1.0f, ps.p3k, sr, b0,b1,b2,a1,a2);
             eq[c][3].set(b0,b1,b2,a1,a2);
-            make_highshelf(9000.f, ps.hs, sr, b0,b1,b2,a1,a2);
+            make_highshelf(9000.f, ps.hs + p.trim9k, sr, b0,b1,b2,a1,a2);
             eq[c][4].set(b0,b1,b2,a1,a2);
         }
         eqOn = (std::fabs(ps.ls) + std::fabs(ps.p300) + std::fabs(ps.p900) +
-                std::fabs(ps.p3k) + std::fabs(ps.hs) + std::fabs(p.bass)) > 0.01f;
+                std::fabs(ps.p3k) + std::fabs(ps.hs) + std::fabs(p.bass) +
+                std::fabs(p.trim1k) + std::fabs(p.trim9k)) > 0.01f;
 
         // ---- 三段分频 ----
         float lb0,lb1,lb2,la1,la2, hb0,hb1,hb2,ha1,ha2;

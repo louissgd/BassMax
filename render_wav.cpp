@@ -108,6 +108,9 @@ int main(int argc, char** argv) {
         if ((e = getenv("BASSMAX_MAKEUP")))  p.makeupDb = (float)atof(e);
         if ((e = getenv("BASSMAX_SAT")))   { p.segSatLo = p.segSatMid = p.segSatHi = (float)atof(e); }
         if ((e = getenv("BASSMAX_SAT_LO")))  p.segSatLo  = (float)atof(e);
+        if ((e = getenv("BASSMAX_SAT_HI")))  { p.segSatMid = p.segSatHi = (float)atof(e); }
+        if ((e = getenv("BASSMAX_TRIM_1K"))) p.trim1k = (float)atof(e);
+        if ((e = getenv("BASSMAX_TRIM_9K"))) p.trim9k = (float)atof(e);
     }
     bassmax::Core core;
     core.setParams(p, (float)w.sr);
