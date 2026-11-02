@@ -4,6 +4,7 @@
 #include "resource.h"
 
 IDI_APP ICON "bassmax.ico"
+IDI_APP_OFF ICON "bassmax_off.ico"
 
 // ---- 属性页 (必须是 WS_CHILD, 由 CBasePropertyPage 放进播放器的属性对话框) ----
 IDD_BASSMAX DIALOGEX 0, 0, 240, 160

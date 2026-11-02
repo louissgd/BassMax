@@ -3,7 +3,8 @@
 
 #define IDD_BASSMAX           101
 #define IDD_BASSMAX_POPUP     102
-#define IDI_APP               301   // 托盘/窗口图标
+#define IDI_APP               301   // 托盘/窗口图标 (开启: 彩色)
+#define IDI_APP_OFF           302   // 总开关关闭时的灰色图标
 
 #define IDS_TITLE             201
 #define IDS_APP_TITLE         202

@@ -1,4 +1,6 @@
 // bassmax_tray.cpp  —  托盘图标线程 + 设置窗口
+// 交互: 左键单击 = 打开/收起设置窗口; 右键单击 = 直接切总开关 (开启 <-> 关闭)
+// 图标: 开启用彩色 (IDI_APP), 关闭用灰色 (IDI_APP_OFF)
 #include "bassmax_tray.h"
 #include "bassmax_ui.h"
 #include "resource.h"
@@ -9,6 +11,8 @@ extern HINSTANCE g_hInst;
 namespace {
 
 const UINT      kTrayMsg  = WM_APP + 101;
+const UINT      kSyncMsg  = WM_APP + 102;   // 设置窗口改了总开关 -> 刷新托盘图标
+const UINT_PTR  kTimerId  = 1;              // 兜底: 其他窗口 (属性页) 改了设置也能跟上
 const UINT      kTrayId   = 1;
 const wchar_t*  kWndClass = L"BassMaxTrayWnd";
 
@@ -19,36 +23,70 @@ HANDLE           g_thread = nullptr;
 HWND             g_trayWnd = nullptr;   // 托盘线程里的隐藏窗口
 HWND             g_dlg     = nullptr;   // 设置窗口 (在托盘线程创建)
 
+// 以下只在托盘线程访问
+NOTIFYICONDATAW  g_nid    = {};
+HICON            g_icoOn  = nullptr;
+HICON            g_icoOff = nullptr;
+LONG             g_lastGen = -1;
+
 void EnsureCs() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
+
+HICON LoadAppIcon(int id, int cx, int cy) {
+    return (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(id), IMAGE_ICON, cx, cy, LR_DEFAULTCOLOR);
+}
+
+// 按当前 enabled 状态刷新托盘图标与提示文字 (托盘线程)
+void ApplyTrayIcon() {
+    if (!g_nid.hWnd) return;
+    bool on = bassmax::GetSettings().enabled;
+
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    HICON h = on ? g_icoOn : g_icoOff;
+    if (h) g_nid.hIcon = h;
+    wcscpy_s(g_nid.szTip, on
+             ? L"BassMax · 已开启\n左键设置   右键关闭"
+             : L"BassMax · 已关闭\n左键设置   右键开启");
+    Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+}
+
+// 右键: 直接翻转总开关, 参数全部保留
+void ToggleEnabled() {
+    bassmax::Settings s = bassmax::GetSettings();
+    s.enabled = !s.enabled;
+    g_lastGen = bassmax::SetSettings(s);      // 音频线程下一拍就生效
+    ApplyTrayIcon();
+    if (g_dlg) {                              // 设置窗口开着就同步勾选框
+        bassmax::UiLoadFromSettings(g_dlg);
+    }
+}
 
 INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM w, LPARAM) {
     switch (msg) {
     case WM_INITDIALOG: {
         bassmax::UiLoadFromSettings(hwnd);
-        HICON hIcon = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
-                                        GetSystemMetrics(SM_CXSMICON),
-                                        GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+        HICON hIcon = LoadAppIcon(IDI_APP, GetSystemMetrics(SM_CXSMICON),
+                                  GetSystemMetrics(SM_CYSMICON));
         if (hIcon) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-        HICON hBig = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
-                                       GetSystemMetrics(SM_CXICON),
-                                       GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
+        HICON hBig = LoadAppIcon(IDI_APP, GetSystemMetrics(SM_CXICON),
+                                 GetSystemMetrics(SM_CYICON));
         if (hBig) SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hBig);
         return TRUE;
     }
     case WM_HSCROLL:
         bassmax::UiUpdateLabels(hwnd);
-        bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 实时生效并保存
+        g_lastGen = bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 实时生效并保存
         return TRUE;
     case WM_COMMAND: {
         int id = LOWORD(w);
         if (id == IDOK || id == IDCANCEL) { DestroyWindow(hwnd); return TRUE; }
         if (id == IDC_CHK_ON) {                       // 总开关: 立即生效
-            bassmax::SetSettings(bassmax::UiReadSettings(hwnd));
+            g_lastGen = bassmax::SetSettings(bassmax::UiReadSettings(hwnd));
             bassmax::UiUpdateLabels(hwnd);
+            if (g_trayWnd) PostMessageW(g_trayWnd, kSyncMsg, 0, 0);   // 换彩色/灰色图标
             return TRUE;
         }
         if (bassmax::UiPresetClicked(hwnd, id) >= 0) {
-            bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 换风格立即生效
+            g_lastGen = bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 换风格立即生效
             bassmax::UiUpdateLabels(hwnd);
         }
         return TRUE;
@@ -66,9 +104,23 @@ INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM w, LPARAM) {
 LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
     case kTrayMsg:
-        // 左键单击 / 右键单击都切出设置窗口 (双击不再需要)
-        if (LOWORD(l) == WM_LBUTTONUP || LOWORD(l) == WM_RBUTTONUP)
+        if (LOWORD(l) == WM_LBUTTONUP) {          // 左键: 设置窗口
             bassmax::ShowTraySettings();
+        } else if (LOWORD(l) == WM_RBUTTONUP) {   // 右键: 直接开关
+            ToggleEnabled();
+        }
+        return 0;
+    case kSyncMsg:
+        ApplyTrayIcon();
+        return 0;
+    case WM_TIMER:
+        if (w == kTimerId) {
+            LONG gen = bassmax::SettingsGen();
+            if (gen != g_lastGen) {               // 属性页等外部改动
+                g_lastGen = gen;
+                ApplyTrayIcon();
+            }
+        }
         return 0;
     case WM_CLOSE:
         DestroyWindow(hwnd);
@@ -95,18 +147,29 @@ DWORD WINAPI TrayThread(LPVOID) {
     g_trayWnd = hwnd;
     LeaveCriticalSection(&g_cs);
 
-    NOTIFYICONDATAW nid = {};
-    nid.cbSize = sizeof(nid);
-    nid.hWnd = hwnd;
-    nid.uID = kTrayId;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = kTrayMsg;
-    nid.hIcon = (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
-                                  GetSystemMetrics(SM_CXSMICON),
-                                  GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
-    if (!nid.hIcon) nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));   // 兜底
-    wcscpy_s(nid.szTip, L"BassMax 音频增强 (单击打开设置)");
-    Shell_NotifyIconW(NIM_ADD, &nid);
+    const int cx = GetSystemMetrics(SM_CXSMICON);
+    const int cy = GetSystemMetrics(SM_CYSMICON);
+    g_icoOn  = LoadAppIcon(IDI_APP, cx, cy);
+    g_icoOff = LoadAppIcon(IDI_APP_OFF, cx, cy);
+    if (!g_icoOff) g_icoOff = g_icoOn;
+
+    bool on = bassmax::GetSettings().enabled;
+    g_lastGen = bassmax::SettingsGen();
+
+    g_nid = {};
+    g_nid.cbSize = sizeof(g_nid);
+    g_nid.hWnd = hwnd;
+    g_nid.uID = kTrayId;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uCallbackMessage = kTrayMsg;
+    g_nid.hIcon = on ? g_icoOn : g_icoOff;
+    if (!g_nid.hIcon) g_nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));   // 兜底
+    wcscpy_s(g_nid.szTip, on
+             ? L"BassMax · 已开启\n左键设置   右键关闭"
+             : L"BassMax · 已关闭\n左键设置   右键开启");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+
+    SetTimer(hwnd, kTimerId, 400, nullptr);
 
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
@@ -114,7 +177,14 @@ DWORD WINAPI TrayThread(LPVOID) {
         DispatchMessageW(&m);
     }
 
-    Shell_NotifyIconW(NIM_DELETE, &nid);
+    KillTimer(hwnd, kTimerId);
+    Shell_NotifyIconW(NIM_DELETE, &g_nid);
+
+    HICON a = g_icoOn, b = g_icoOff;
+    g_icoOn = g_icoOff = nullptr;
+    if (a) DestroyIcon(a);
+    if (b && b != a) DestroyIcon(b);
+    g_nid = {};
     return 0;
 }
 
