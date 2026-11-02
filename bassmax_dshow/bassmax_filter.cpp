@@ -127,9 +127,16 @@ void BassMaxFilter::ApplyToAllCores() {
 // 把全局设置同步进 DSP (音频线程检测到代号变化后调用; 属性页只写注册表, 不碰 DSP)
 void BassMaxFilter::ApplySettings() {
     bassmax::Settings s = bassmax::GetSettings();
-    m_params.bass   = s.bass;
-    m_params.drive  = s.drive;
-    m_params.preset = s.preset;
+    if (s.enabled) {
+        m_params.bass   = s.bass;
+        m_params.drive  = s.drive;
+        m_params.preset = s.preset;
+    } else {
+        // 总开关关闭: 全部归零 -> Core 内部判定 bypass, 逐样本直接返回, 不做任何处理
+        m_params.bass   = 0.0f;
+        m_params.drive  = 0.0f;
+        m_params.preset = 0;
+    }
     ApplyToAllCores();
     InterlockedExchange(&m_gen, bassmax::SettingsGen());
 }

@@ -33,6 +33,11 @@ INT_PTR CALLBACK SettingsDlgProc(HWND hwnd, UINT msg, WPARAM w, LPARAM) {
     case WM_COMMAND: {
         int id = LOWORD(w);
         if (id == IDOK || id == IDCANCEL) { DestroyWindow(hwnd); return TRUE; }
+        if (id == IDC_CHK_ON) {                       // 总开关: 立即生效
+            bassmax::SetSettings(bassmax::UiReadSettings(hwnd));
+            bassmax::UiUpdateLabels(hwnd);
+            return TRUE;
+        }
         if (bassmax::UiPresetClicked(hwnd, id) >= 0) {
             bassmax::SetSettings(bassmax::UiReadSettings(hwnd));   // 换风格立即生效
             bassmax::UiUpdateLabels(hwnd);

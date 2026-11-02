@@ -4,12 +4,12 @@
 #include "resource.h"
 
 // ---- 属性页 (必须是 WS_CHILD, 由 CBasePropertyPage 放进播放器的属性对话框) ----
-IDD_BASSMAX DIALOGEX 0, 0, 240, 132
+IDD_BASSMAX DIALOGEX 0, 0, 240, 146
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_CAPTION
 CAPTION "BassMax"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
-    LTEXT           "音效风格", IDC_LBL_STYLE, 8, 24, 44, 10
+    CONTROL         "总开关", IDC_CHK_ON, "BUTTON", BS_AUTOCHECKBOX | WS_TABSTOP, 6, 23, 50, 12
     CONTROL         "标准乐", IDC_PRE0, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_GROUP | WS_TABSTOP, 58, 6, 48, 15
     CONTROL         "古典乐", IDC_PRE1, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 112, 6, 48, 15
     CONTROL         "俱乐部", IDC_PRE2, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 58, 24, 48, 15
@@ -27,15 +27,16 @@ BEGIN
 
     LTEXT           "驱动: 把安静段拉向满电平, 超过的压回; 0 = 关闭效果", IDC_HINT, 8, 106, 226, 10
     LTEXT           "低音: 100Hz 低架增益 (dB)", IDC_HINT2, 8, 118, 226, 10
+    LTEXT           "总开关: 未勾选时整条链路直接旁路, 不做任何处理", IDC_HINT3, 8, 130, 226, 10
 END
 
 // ---- 托盘双击后的独立设置窗口 ----
-IDD_BASSMAX_POPUP DIALOGEX 0, 0, 240, 132
+IDD_BASSMAX_POPUP DIALOGEX 0, 0, 240, 146
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "BassMax 音频增强"
 FONT 9, "Microsoft YaHei UI", 400, 0, 0x86
 BEGIN
-    LTEXT           "音效风格", IDC_LBL_STYLE, 8, 24, 44, 10
+    CONTROL         "总开关", IDC_CHK_ON, "BUTTON", BS_AUTOCHECKBOX | WS_TABSTOP, 6, 23, 50, 12
     CONTROL         "标准乐", IDC_PRE0, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_GROUP | WS_TABSTOP, 58, 6, 48, 15
     CONTROL         "古典乐", IDC_PRE1, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 112, 6, 48, 15
     CONTROL         "俱乐部", IDC_PRE2, "BUTTON", BS_AUTORADIOBUTTON | BS_PUSHLIKE | WS_TABSTOP, 58, 24, 48, 15
@@ -53,6 +54,7 @@ BEGIN
 
     LTEXT           "驱动: 把安静段拉向满电平, 超过的压回; 0 = 关闭效果", IDC_HINT, 8, 106, 226, 10
     LTEXT           "低音: 100Hz 低架增益 (dB)", IDC_HINT2, 8, 118, 226, 10
+    LTEXT           "总开关: 未勾选时整条链路直接旁路, 不做任何处理", IDC_HINT3, 8, 130, 226, 10
 END
 
 STRINGTABLE

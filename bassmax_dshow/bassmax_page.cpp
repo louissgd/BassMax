@@ -34,14 +34,22 @@ INT_PTR CBassMaxPage::OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
             m_bDirty = TRUE;
             if (m_pPageSite) m_pPageSite->OnStatusChange(PROPPAGESTATUS_DIRTY);
             return TRUE;
-        case WM_COMMAND:
-            if (bassmax::UiPresetClicked(hwnd, LOWORD(wParam)) >= 0) {
+        case WM_COMMAND: {
+            int id = LOWORD(wParam);
+            if (id == IDC_CHK_ON) {                 // 总开关: 只置脏, 点"应用"才生效
+                bassmax::UiUpdateLabels(hwnd);
+                m_bDirty = TRUE;
+                if (m_pPageSite) m_pPageSite->OnStatusChange(PROPPAGESTATUS_DIRTY);
+                return TRUE;
+            }
+            if (bassmax::UiPresetClicked(hwnd, id) >= 0) {
                 bassmax::UiUpdateLabels(hwnd);
                 m_bDirty = TRUE;
                 if (m_pPageSite) m_pPageSite->OnStatusChange(PROPPAGESTATUS_DIRTY);
                 return TRUE;
             }
             break;
+        }
     }
     return FALSE;
 }

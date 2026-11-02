@@ -20,6 +20,7 @@ inline Settings UiReadSettings(HWND hwnd) {
     for (int i = 0; i < 6; ++i) {
         if (IsDlgButtonChecked(hwnd, IDC_PRE0 + i) == BST_CHECKED) { s.preset = i; break; }
     }
+    s.enabled = (IsDlgButtonChecked(hwnd, IDC_CHK_ON) == BST_CHECKED);
     return s;
 }
 
@@ -30,6 +31,13 @@ inline void UiUpdateLabels(HWND hwnd) {
     SetDlgItemTextW(hwnd, IDC_TXT_BASS, buf);
     swprintf_s(buf, L"%d %%", (int)(s.drive * 100.f + 0.5f));
     SetDlgItemTextW(hwnd, IDC_TXT_DRIVE, buf);
+    // 总开关关掉时, 其余控件置灰 (参数保留, 重新勾上就恢复)
+    const int kids[] = { IDC_SLD_BASS, IDC_SLD_DRIVE, IDC_TXT_BASS, IDC_TXT_DRIVE,
+                         IDC_PRE0, IDC_PRE1, IDC_PRE2, IDC_PRE3, IDC_PRE4, IDC_PRE5 };
+    for (int k = 0; k < 10; ++k) {
+        HWND h = GetDlgItem(hwnd, kids[k]);
+        if (h) EnableWindow(h, s.enabled ? TRUE : FALSE);
+    }
 }
 
 inline void UiLoadFromSettings(HWND hwnd) {
@@ -38,6 +46,7 @@ inline void UiLoadFromSettings(HWND hwnd) {
     SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE, TBM_SETRANGE, TRUE, MAKELPARAM(0, 10));
     SendDlgItemMessageW(hwnd, IDC_SLD_BASS,  TBM_SETPOS, TRUE, (LPARAM)(int)((s.bass + 12.f) * 10.f + 0.5f));
     SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE, TBM_SETPOS, TRUE, (LPARAM)(int)(s.drive * 10.f + 0.5f));
+    CheckDlgButton(hwnd, IDC_CHK_ON, s.enabled ? BST_CHECKED : BST_UNCHECKED);
     for (int i = 0; i < 6; ++i)
         CheckDlgButton(hwnd, IDC_PRE0 + i, (s.preset == i) ? BST_CHECKED : BST_UNCHECKED);
     UiUpdateLabels(hwnd);

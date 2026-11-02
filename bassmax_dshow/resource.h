@@ -14,6 +14,7 @@
 #define IDC_LBL_DRIVE         1006
 #define IDC_HINT              1007
 #define IDC_HINT2             1008
+#define IDC_HINT3             1009
 
 // 6 个 EQ 预设 (原版界面: 标准乐 / 古典乐 / 俱乐部 / 流行乐 / 爵士乐 / 摇滚乐)
 #define IDC_LBL_STYLE         1010
@@ -23,3 +24,4 @@
 #define IDC_PRE3              1014
 #define IDC_PRE4              1015
 #define IDC_PRE5              1016
+#define IDC_CHK_ON            1017   // 总开关 (启用 / 完全旁路)

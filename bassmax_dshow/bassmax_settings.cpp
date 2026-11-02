@@ -8,7 +8,7 @@ namespace bassmax {
 
 static CRITICAL_SECTION s_cs;
 static INIT_ONCE        s_once = INIT_ONCE_STATIC_INIT;
-static Settings         s_val = { 0.0f, 0.0f, 0 };
+static Settings         s_val = { 0.0f, 0.0f, 0, true };
 static volatile LONG    s_gen = 0;
 static bool             s_tray = true;
 
@@ -38,6 +38,11 @@ static BOOL CALLBACK InitOnce(PINIT_ONCE, PVOID, PVOID*) {
         if (RegQueryValueExW(hk, L"Preset", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
             buf[(sizeof(buf) / sizeof(buf[0])) - 1] = 0;
             s_val.preset = (int)wcstod(buf, nullptr);
+        }
+        sz = sizeof(buf); type = 0;
+        if (RegQueryValueExW(hk, L"Enabled", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
+            buf[(sizeof(buf) / sizeof(buf[0])) - 1] = 0;
+            s_val.enabled = ((float)wcstod(buf, nullptr) != 0.0);
         }
         sz = sizeof(buf); type = 0;
         if (RegQueryValueExW(hk, L"TrayIcon", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
@@ -98,15 +103,18 @@ static void SaveLocked(const Settings& s) {
     RegSetValueExW(hk, L"Drive", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
     swprintf_s(buf, L"%d", s.preset);
     RegSetValueExW(hk, L"Preset", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
+    swprintf_s(buf, L"%d", s.enabled ? 1 : 0);
+    RegSetValueExW(hk, L"Enabled", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
     RegCloseKey(hk);
 }
 
 LONG SetSettings(const Settings& in) {
     InitSettings();
     Settings s;
-    s.bass   = ClampBass(in.bass);
-    s.drive  = ClampDrive(in.drive);
-    s.preset = ClampPreset(in.preset);
+    s.bass    = ClampBass(in.bass);
+    s.drive   = ClampDrive(in.drive);
+    s.preset  = ClampPreset(in.preset);
+    s.enabled = in.enabled;
     EnterCriticalSection(&s_cs);
     s_val = s;
     SaveLocked(s);

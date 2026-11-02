@@ -8,6 +8,7 @@ struct Settings {
     float bass;    // 低频搁架增益 (dB), -12 .. +12
     float drive;   // 驱动 0 .. 1 (0..10 级, 每级 0.1)
     int   preset;  // EQ 风格 0..5
+    bool  enabled; // 总开关: false = 整条链路旁路, 一个样本都不动
 };
 
 // 幂等: 首次调用时从 HKCU\Software\BassMax 读取 (Bass / Drive 字符串值)
