@@ -11,18 +11,19 @@ timeout /t 2 >nul
 
 echo 复制到已安装目录 ...
 copy /y "%SRC%\bassmax_dshow.ax"  "%DST%\bassmax_dshow.ax"  || goto :fail
-copy /y "%SRC%\BassMaxConfig.exe" "%DST%\BassMaxConfig.exe" || goto :fail
+rem 旧版附带的独立设置程序已废弃, 顺手清掉
+if exist "%DST%\BassMaxConfig.exe" del /q "%DST%\BassMaxConfig.exe"
 
 if exist "%MASTER%" (
   echo 复制到安装包母版 ...
   copy /y "%SRC%\bassmax_dshow.ax"  "%MASTER%\bassmax_dshow.ax"  || goto :fail
-  copy /y "%SRC%\BassMaxConfig.exe" "%MASTER%\BassMaxConfig.exe" || goto :fail
+  if exist "%MASTER%\BassMaxConfig.exe" del /q "%MASTER%\BassMaxConfig.exe"
 )
 
 echo.
 echo [完成]
 echo   滤镜 : %DST%\bassmax_dshow.ax
-echo   设置 : %DST%\BassMaxConfig.exe  (播放器没开也能调设置)
+echo   设置 : rundll32.exe "%DST%\bassmax_dshow.ax",BassMaxConfig
 pause
 exit /b 0
 
