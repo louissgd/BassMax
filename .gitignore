@@ -1,0 +1,37 @@
+# 音频素材与试听输出（体积大，不入库）
+*.wav
+*.pk
+*.mp4
+*.flac
+*.mp3
+
+# 中间数据
+*.csv
+*.npy
+*.obj
+*.exe
+*.exp
+*.lib
+*.pdb
+*.ilk
+*.log
+*.bmp
+
+# 编译器/IDE
+obj/
+.vs/
+*.user
+*.obj.d
+/bassmax_vst3/build_nm/
+
+# 备份快照
+/backup/
+/单文件版/
+/多文件版/
+/calib/
+/calib_out/
+/measure_out/
+/test_signals/
+
+# 旧方案归档（保留在磁盘，不入主库）
+*.bak
