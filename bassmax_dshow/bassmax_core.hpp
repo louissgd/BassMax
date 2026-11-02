@@ -85,6 +85,17 @@ inline void make_lr4_lp(float f0, float sr, float& b0, float& b1, float& b2,
 inline void make_lr4_hp(float f0, float sr, float& b0, float& b1, float& b2,
                         float& a1, float& a2) { make_butter_hp(f0, sr, b0,b1,b2,a1,a2); }
 
+// 指定 Q 的二阶低通。用于多级级联凑高阶 (超声保护用)。
+inline void make_lp_q(float f0, float Q, float sr, float& b0, float& b1, float& b2,
+                      float& a1, float& a2) {
+    float w0 = 2.0f*3.14159265f*f0/sr;
+    float cw = std::cos(w0), sw = std::sin(w0);
+    float alpha = sw/(2.0f*Q);
+    float a0 = 1.0f + alpha;
+    b0 = (1.0f - cw)*0.5f/a0; b1 = (1.0f - cw)/a0; b2 = b0;
+    a1 = (-2.0f*cw)/a0;       a2 = (1.0f - alpha)/a0;
+}
+
 // RBJ 峰值 (bell)
 inline void make_peak(float f0, float Q, float gainDb, float sr,
                       float& b0, float& b1, float& b2, float& a1, float& a2) {
@@ -188,6 +199,17 @@ struct Tuning {
     // 段内饱和上限 (实测参考: 低 0.81 / 中 0.75 / 高 0.67)。
     // 每段自己把峰值磨圆, 末端宽带限幅就不用干活 -> 鼓点不会把中高频一起压下去。
     static constexpr float SEG_SAT_LO = 0.82f, SEG_SAT_MID = 0.75f, SEG_SAT_HI = 0.67f;
+
+    // ---- 超声保护 (2026-11-03, 为 DSD 而加) ----
+    // DSD 解码成 PCM 后是 352.8k (DSD64) / 705.6k (DSD128), 而 DSD 的噪声整形
+    // 把量化噪声全部推到 20kHz 以上, 在 40-100kHz 一带接近满刻度。
+    // 这套信号链的饱和器是 tanh (非线性): 满刻度的超声噪声进去, 会和音乐互调出
+    // 落在可听频段的产物; 检测器也会读到这个能量, 把高音段整段压下去。
+    // 实听表现为"发闷 + 发噪", 比 128k MP3 还差。
+    // 处理办法: 在输入端加 8 阶巴特沃斯低通, 把 20kHz 以上切掉。
+    // 只在 sr >= 176.4k (DSD 派生采样率) 时启用, 44.1k/48k/88.2k/96k 完全不受影响。
+    static constexpr float US_FREQ   = 20000.0f;
+    static constexpr float US_MIN_SR = 176400.0f;
 };
 
 // ---- 一阶平滑 (能量域检测用) ----
@@ -220,6 +242,17 @@ private:
 };
 
 // ---- 前瞻峰值保护 (立体声联动, 窗口取最大) ----
+//
+// 2026-11-03 性能修复 (DSD 断音):
+//   旧实现每个样本线性扫一遍整个窗口求最大值, 开销 O(W), 而 W = LIM_LOOK * sr
+//   随采样率线性增长 -> 每秒开销约 O(sr^2)。
+//     44.1k : W=220   -> 实时倍率 51x    (没问题, 所以一直没暴露)
+//     96k   : W=480   -> 11.8x
+//     352.8k: W=1764  -> 0.96x  <-- DSD64 解码后的实际采样率, 算不动 -> 断断续续
+//     705.6k: W=3528  -> 0.24x
+//   改成单调双端队列 (滑动窗口最大值的标准 O(1) 摊还解法) 后, 每样本只做几次比较。
+//   窗口定义、比较顺序、float 取值与旧实现完全一致, 所以输出逐位相同 —— 音色不变,
+//   只是不再随采样率平方级变慢。
 class Limiter {
 public:
     void setParams(float sr, float ceilDb, float attMs = Tuning::LIM_ATT,
@@ -230,23 +263,49 @@ public:
         int w = (int)(Tuning::LIM_LOOK*sr);
         if (w < 8) w = 8;
         if ((int)dl.size() != w) { dl.assign(w, 0.f); dr.assign(w, 0.f); }
-        W = w; wp = 0; gain = 1.f;
+        W = w;
+        // 单调队列容量: 极端情况 (输入严格递减) 窗口内每个样本都在队列里
+        cap = W + 2;
+        dqv.assign((size_t)cap, 0.f);
+        dqi.assign((size_t)cap, 0);
+        wp = 0; gain = 1.f;
+        dqn = 0; qh = 0; qt = 0;
     }
     void clear() {
         std::fill(dl.begin(), dl.end(), 0.f);
         std::fill(dr.begin(), dr.end(), 0.f);
         wp = 0; gain = 1.f;
+        dqn = 0; qh = 0; qt = 0;
     }
     float curGain() const { return gain; }
     void run(float& l, float& r) {
         if (W <= 0) return;
         dl[wp] = l; dr[wp] = r;
         int outPos = (wp + 1) % W;
-        float pk = 0.f;
-        for (int i = 0; i < W; ++i) {
-            float a = std::fabs(dl[i]); if (a > pk) pk = a;
-            float b = std::fabs(dr[i]); if (b > pk) pk = b;
+
+        // 本样本对窗口峰值的贡献 = max(|l|, |r|)
+        float al = std::fabs(l), ar = std::fabs(r);
+        float v  = al > ar ? al : ar;
+        const long long idx = ++dqn;
+
+        // 单调递减队列: 从尾部弹掉所有不大于 v 的元素
+        while (qt > qh) {
+            int bi = (int)((qt - 1) % (long long)cap);
+            if (dqv[bi] > v) break;
+            --qt;
         }
+        if (qt == qh) { qh = 0; qt = 0; }         // 队列空 -> 归零, 免得计数无限增长
+        int ti = (int)(qt % (long long)cap);
+        dqv[ti] = v; dqi[ti] = idx; ++qt;
+
+        // 头部弹出滑出窗口 [idx-W+1, idx] 的元素
+        const long long oldest = idx - W;
+        while (qh < qt && dqi[(int)(qh % (long long)cap)] <= oldest) {
+            ++qh;
+            if (qh >= qt) { qh = 0; qt = 0; break; }
+        }
+        float pk = dqv[(int)(qh % (long long)cap)];
+
         float tgt = (pk > ceil) ? (ceil / pk) : 1.f;
         float c = (tgt < gain) ? att : rel;
         gain += (tgt - gain) * c;
@@ -257,7 +316,10 @@ public:
     }
 private:
     std::vector<float> dl, dr;
-    int W = 0, wp = 0;
+    std::vector<float> dqv;      // 单调递减队列: 值
+    std::vector<long long> dqi;  // 单调递减队列: 绝对样本序号
+    int W = 0, wp = 0, cap = 0;
+    long long dqn = 0, qh = 0, qt = 0;
     float gain = 1.f, att = 0.f, rel = 0.f, ceil = Tuning::CEILING;
 };
 
@@ -265,13 +327,16 @@ private:
 class Core {
 public:
     void reset(float sr) {
-        (void)sr;
+        // 直流阻断系数必须随采样率换算, 见 setParams 里的说明。
+        // sr<=0 表示"只清状态, 不改参数"(Channel 包装会这样调)。
+        if (sr > 0.f) dcR = std::pow(0.995f, 44100.0f / sr);
         for (int c = 0; c < 2; ++c) {
             sumA[c].clear(); sumB[c].clear();
             hiA[c].clear();  hiB[c].clear();
             loA[c].clear();  loB[c].clear();
             midA[c].clear(); midB[c].clear();
             for (int k = 0; k < 5; ++k) eq[c][k].clear();
+            for (int k = 0; k < 4; ++k) us[c][k].clear();
             peq[c].clear();
         }
         dcx[0]=dcx[1]=dcy[0]=dcy[1]=0.f;
@@ -323,6 +388,19 @@ public:
             midA[c].set(hb0,hb1,hb2,ha1,ha2); midB[c].set(hb0,hb1,hb2,ha1,ha2);
         }
 
+        // ---- 超声保护 (仅 DSD 派生采样率) ----
+        usOn = (sr >= Tuning::US_MIN_SR);
+        if (usOn) {
+            // 8 阶巴特沃斯 -> 4 级二阶级联, 用巴特沃斯极点对应的 Q
+            static const float kUsQ[4] = { 0.50980f, 0.60135f, 0.89998f, 2.56292f };
+            float g0,g1,g2,ga1,ga2;
+            for (int c = 0; c < 2; ++c)
+                for (int k = 0; k < 4; ++k) {
+                    make_lp_q(Tuning::US_FREQ, kUsQ[k], sr, g0,g1,g2,ga1,ga2);
+                    us[c][k].set(g0,g1,g2,ga1,ga2);
+                }
+        }
+
         dr     = clampf(p.drive, 0.f, 1.f);
         bypass = (dr <= 1e-4f) && !eqOn;
         mkDb   = (p.makeupDb != 0.f) ? p.makeupDb : Tuning::MAKEUP_DB;
@@ -365,13 +443,17 @@ public:
         if (bypass) return;                 // 驱动=0 且 EQ 全平: 一个样本都不动
         for (int i = 0; i < frames; ++i) {
             float xl = buf[2*i], xr = buf[2*i+1];
+            // 超声保护: DSD 派生采样率下, 先把 20k 以上的噪声切掉再进非线性段
+            if (usOn) {
+                for (int k = 0; k < 4; ++k) { xl = us[0][k].run(xl); xr = us[1][k].run(xr); }
+            }
             // 静态 EQ (预设 + 低音)
             if (eqOn) {
                 for (int k = 0; k < 5; ++k) { xl = eq[0][k].run(xl); xr = eq[1][k].run(xr); }
             }
-            // DC 阻断
-            float tl = xl - dcx[0] + 0.995f*dcy[0]; dcx[0]=xl; dcy[0]=tl; xl = tl;
-            float tr = xr - dcx[1] + 0.995f*dcy[1]; dcx[1]=xr; dcy[1]=tr; xr = tr;
+            // DC 阻断 (系数按采样率换算, 见 dcR)
+            float tl = xl - dcx[0] + dcR*dcy[0]; dcx[0]=xl; dcy[0]=tl; xl = tl;
+            float tr = xr - dcx[1] + dcR*dcy[1]; dcx[1]=xr; dcy[1]=tr; xr = tr;
             // 三段分频: 先在 2500Hz 分高低, 再从低段在 120Hz 分低/中 (LR4)
             float al = sumB[0].run(sumA[0].run(xl));
             float hl = hiB[0].run(hiA[0].run(xl));
@@ -436,7 +518,10 @@ private:
     Biquad sumA[2], sumB[2], hiA[2], hiB[2], loA[2], loB[2], midA[2], midB[2];
     Biquad eq[2][5];
     Biquad peq[2];
+    Biquad us[2][4];                    // 超声保护 (8 阶低通) 4 级级联
+    bool   usOn = false;
     bool   postOn = false;
+    float  dcR = 0.995f;                // DC 阻断极点, 实际值由采样率决定
     float dcx[2] = {0,0}, dcy[2] = {0,0};
     Follower fLo;
     Smooth smMid, smHi;
@@ -451,6 +536,7 @@ private:
     bool  eqOn = false, bypass = false;
     Limiter lim;
 public:
+    float limGain() const { return lim.curGain(); }   // 诊断用
 #ifdef BASSMAX_DEBUG
     float dbgG[3] = {0,0,0}, dbgL[3] = {-90,-90,-90}, dbgLim = 1.f;
 #endif
