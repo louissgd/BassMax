@@ -483,7 +483,7 @@ VST3 分支此前只是并行验证，DSP 核心与 DirectShow 版共用同一�
 
 ### 13.3 定版快照
 
-- `.ax` 183,808 B，`machine=0x8664`，`FileVersion 1.0.0.0`，SHA256 前 16 位见下节。
-- 三处一致：源码产物 / `~\MyMPC\Codecs\` / `D:/MyMPC_CG_x86_x64/3.Core/1.Core/`。
+- `.ax` 183,808 B，`machine=0x8664`，`FileVersion 1.0.0.0`，SHA256 前 16 位 `c53568be4c3f80e7`。
+- 四处一致：源码产物 / `_release` 归档 / `~\MyMPC\Codecs\` / `D:/MyMPC_CG_x86_x64/3.Core/1.Core/`。
 - 归档：`_release/BassMax_1.0.0_2026-11-03/`（README.md + BACKUP.md + bin/ + src/ + tools/）
   与同名 `.zip`；git 打标签 `v1.0.0`。
