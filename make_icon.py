@@ -116,6 +116,16 @@ def draw(size, mode='on'):
     return img.resize((size, size), Image.LANCZOS)
 
 
+# 开启/关闭并排对比图 (文档用)
+def compare():
+    a, b = draw(256, 'on'), draw(256, 'off')
+    pad = 24
+    c = Image.new('RGBA', (256 * 2 + pad * 3, 256 + pad * 2), (24, 26, 30, 255))
+    c.paste(a, (pad, pad), a)
+    c.paste(b, (pad * 2 + 256, pad), b)
+    c.save('icon_compare.png')
+
+
 here = os.path.dirname(os.path.abspath(__file__))
 for mode, name in [('on', 'bassmax.ico'), ('off', 'bassmax_off.ico')]:
     imgs = [draw(s, mode) for s in SIZES]
@@ -126,10 +136,7 @@ for mode, name in [('on', 'bassmax.ico'), ('off', 'bassmax_off.ico')]:
 
     if mode == 'on':
         big.save('bassmax_icon_preview.png')
-        draw(16).resize((256, 256), Image.NEAREST).save('bassmax_icon_16x.png')
-        draw(32).resize((256, 256), Image.NEAREST).save('bassmax_icon_32x.png')
     else:
         big.save('bassmax_icon_off_preview.png')
-        draw(16, 'off').resize((256, 256), Image.NEAREST).save('bassmax_icon_off_16x.png')
-        draw(32, 'off').resize((256, 256), Image.NEAREST).save('bassmax_icon_off_32x.png')
+compare()
 print('preview ok')

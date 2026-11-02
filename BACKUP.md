@@ -1,7 +1,8 @@
-# BassMax v4 备份说明（2026-11-02）
+# BassMax 备份说明（2026-11-02 定稿）
 
-> 用户试听结论：**"效果好了很多 已经非常接近 OctIMAX"**。
-> 本快照为多日测试基线，测试期间请勿改动 `bassmax_core.hpp` 的标定参数。
+> 用户试听结论：**"效果好了很多 已经非常接近 OctIMAX"**、**"之前测试曲目效果不错"**、
+> **"高音加+3效果不错"**、**"慢释放确实更好"**、**"很好"**（双图标 + 右键开关）。
+> 本快照为测试基线：核心参数、界面、托盘交互均已定稿，请勿随意改动 `bassmax_core.hpp` 的标定参数。
 
 ## 一、版本标识
 
@@ -76,36 +77,70 @@ DC 阻断 → 三段分频 LR4 → 各段电平检测 → 线性拉伸 → 增�
   - `bassmax_off.ico` = `IDI_APP_OFF`（302），关闭态：同形状灰阶，亮点压暗。
   - 16/20 px 自动简化成两根柱，否则小尺寸下三条会糊成一片。
 
-## 四、三曲评测（驱动 100）
+### 注册表项（`HKEY_CURRENT_USER\Software\BassMax`，全部为 REG_SZ 字符串）
 
-| 曲目 | 包络相关 | 响度差 | 峰因（本版 / 原版） |
+| 值名 | 当前值 | 范围 | 含义 |
 |---|---|---|---|
-| Rewrite The Stars | 0.969 | −0.61 dB | 3.74 / 3.54 |
-| 风雨无阻 | 0.901 | −0.59 dB | 3.90 / 3.64 |
-| Here I Am（极端） | 0.972 | −0.11 dB | 3.85 / 3.86 |
+| `Bass` | `2.0` | −12.0 … +12.0 | 低音，100 Hz 低架（dB），**在预设 EQ 链内，参与电平检测** |
+| `Treble` | `2.0` | −12.0 … +12.0 | 高音，9 kHz 高架（dB），**后置 EQ，不进压缩** |
+| `Drive` | `1.00` | 0.00 … 1.00 | 驱动（界面 0–100%，共 11 档）；0 = 逐样本旁路 |
+| `Preset` | `4` | 0 … 5 | 风格：0 标准乐 / 1 古典乐 / 2 俱乐部 / 3 流行乐 / **4 爵士乐** / 5 摇滚乐 |
+| `Enabled` | `1` | 0 / 1 | 总开关；0 时 DSP 参数全部按零处理，逐样本原样输出 |
+| `DspVer` | `4` | 内部 | 配置版本。**手动改小会触发参数重写**（<3 驱动归零；<4 整套写回定稿默认） |
+| `TrayIcon` | *（未写入）* | 0 / 1 | 是否显示托盘图标，默认 1；写 0 可彻底隐藏，只能从属性页进设置 |
+
+> 恢复定稿默认：删掉整个 `BassMax` 键再重启宿主，会自动重建为「爵士 +2 / +2 / 100% / 开启」。
+> 手改字符串后重启生效；超范围的值会被钳住，不会出错。
+
+## 四、三曲评测（定稿默认：爵士 / 低音+2 / 高音+2 / 驱动 100，2026-11-02 23:44 实测）
+
+| 曲目 | 包络相关 | 响度差 | 峰因（本版 / 原版） | 峰值 |
+|---|---|---|---|---|
+| Rewrite The Stars | 0.968 | −0.18 dB | 3.53 / 3.54 | 0.979 |
+| 风雨无阻 | 0.888 | −0.34 dB | 3.75 / 3.64 | 0.979 |
+| Here I Am（极端） | 0.971 | +0.18 dB | 3.69 / 3.86 | 0.979 |
+
+三首峰值均 0.979（−0.19 dBFS），对应原版「限制到 0.1」（−0.1 dBFS），差 0.09 dB。
+低频活跃度与原版一致（0.95–0.99 倍），说明拉伸出力方向正确。
+风雨无阻的包络相关 0.888 是唯一偏低项，原因是高频段独立时间常数（10/150 ms）比全局 400 ms 快，
+评估脚本按全带算包络时会把这段算作偏差；用户实际试听认为 400 ms 低频 + 快高频的组合更好。
 
 ## 五、已知遗留问题（后续迭代方向）
 
-1. 三曲响度均偏原版 0.1–0.6 dB，可考虑补 1 dB。
-2. 极端曲 `Here I Am` 末端限幅 41% 帧在动作（最深 −5.9 dB），是否可闻待长测确认。
-3. 驱动档位之间的主观一致性只在驱动 100 上标定过，中间档位（1–9）为线性插值，未逐一校准。
+1. 驱动档位之间的主观一致性只在驱动 100 上标定过，中间档位（1–9）为线性插值，未逐一校准。
+2. 极端曲 `Here I Am` 末端限幅仍在较多帧动作（最深约 −6 dB），用户长测未报告可闻问题，暂不动。
+3. 电子乐类素材（混响多）的「空旷感」只减轻了一部分：高频段已改快收快放，
+   剩下约 1.8 dB 的差异来自拉伸强度本身，属于与原版的取舍，未再压。
+4. VST3 版本已暂停（用户明确不需要），`bassmax_vst3/` 仅留骨架，未参与编译。
 
 ## 六、目录结构
 
 ```
 bassmax_core.hpp              DSP 核心（单头文件，无依赖）
+bassmax_core_v2/v3.hpp.bak    旧方案留档（不入库）
+bassmax.ico / bassmax_off.ico 图标源文件（开启 / 关闭），make_icon.py 生成
+icon_compare.png              两套图标并排对比图（文档用）
+
 bassmax_dshow/                DirectShow 滤镜（ax 宿主）
   bassmax_core.hpp            核心副本（编译前从上级复制）
-  bassmax_filter.cpp          采样处理与参数下发
-  bassmax_settings.cpp/.h     注册表持久化（Bass/DspVer/Preset）
-  bassmax_ui.h                预设按钮逻辑
-  bassmax.rc                  资源（6 按钮 3×2 布局）
+  bassmax_filter.cpp          采样处理与参数下发 / 总开关旁路
+  bassmax_settings.cpp/.h     注册表持久化（Bass/Treble/Drive/Preset/Enabled/DspVer）
+  bassmax_ui.h                控件读写 + 预设按钮 + 总开关灰化
+  bassmax_tray.cpp/.h         托盘线程（左键设置 / 右键开关 / 双图标 / 窗口居中）
+  bassmax_page.cpp/.h         滤镜属性页
+  bassmax.rc / resource.h     资源（6 预设按钮 + 3 滑块 + 总开关 + 两套图标）
+  bassmax.ico / bassmax_off.ico  编进资源的图标副本
+  build.sh                    插件编译脚本
   install.bat / uninstall.bat 注册脚本（需右键管理员运行）
+
 render_wav.cpp                离线渲染工具（离线试听/标定用）
 dump_gain.cpp                 逐样本导出增益曲线
 build_tools.sh                离线工具编译脚本
+make_icon.py                  两套 ICO + 对比图生成
 metrics.py                    三曲联合评测
-fit_simple.py                 线性拉伸模型拟合
+fit_simple.py / fit_joint.py / fit_bins.py   线性拉伸模型拟合
+pair_io.py / wcut.py          wav 读写、试听片段切分
+部署新版本.bat                宿主机运行中也能换 ax（先结束 MPC 再覆盖）
 ```
 
 ## 七、重新编译
@@ -147,6 +182,23 @@ bash build_tools.sh      # 生成 render_wav.exe / dump_gain.exe
 - 38 个一次性探索脚本（旧拟合/调试/分析脚本）
 - 6 个 exe + 4 个 obj、`calib/`、`calib_out/`、`measure_out/`、`test_signals/`
 - `bassmax_vst3/build_nm/`（290 MB CMake 缓存，VST3 已暂停）
+
+### 第二轮清理（2026-11-02 23:44，定稿后）
+
+删除全部测试与临时产物，工程目录 981 MB → 864 MB（剩下 860 MB 全是 10 个素材 wav）：
+
+- `*.pk` 3 个（播放器峰值缓存）
+- `试听/` `试听A/` 共 114 MB 的 A/B 对照片段
+- `render_wav.exe/.obj`、`dump_gain.exe/.obj`（`bash build_tools.sh` 一条命令重建）
+- `bassmax_dshow/obj/`、3 个 `build_*.log`、`.exp`、`.lib`、`设置界面预览.bmp`
+- `bassmax_dshow/` 里 9 个旧测试程序源码（`test_com/test_formats/test_props/test_reg/test_reg2/test_shot/test_transform/test_tray/unreg.cpp`）
+- 12 个诊断脚本（`an_*.py`、`sweep_*.py`、`mk_probe.py`）——git 历史里都有，
+  `git checkout <提交> -- 文件名` 可单取
+- 6 个图标预览 png 精简为 `icon_compare.png` 一张（`python make_icon.py` 重新生成）
+- `base_core.hpp`（与 `bassmax_core.hpp` 完全相同的残留副本）
+
+**保留**：10 个素材 wav、原版 OctIMAX 本体（`单文件版/` `多文件版/`）、全部源码与 `bassmax_dshow.ax`、
+标定与评测脚本、`bassmax_core_v2/v3.hpp.bak`、`部署新版本.bat`。
 
 **重建方式**：
 
