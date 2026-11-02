@@ -1,5 +1,14 @@
 # BassMax — 64 位通用重写 (Clean-room)
 
+> **⚠ 本文是早期设计文档，部分内容已过时**（写于 v1 阶段：旧 10 点曲线表、驱动以百分比粗调、
+> 曾计划同时出 VST3、目录里提到的 `bassmax_model.py` / `verify.py` / `measure_out/` /
+> `test_signals/` 已在清理中删除）。
+>
+> **当前实况以 [`BACKUP.md`](BACKUP.md) 为准**：简化拉伸模型、三段分段参数、高频独立时间常数、
+> 6 个 EQ 预设、驱动 0–10 分档、定稿默认值、注册表项、三曲评测、快照与回退方式。
+> 本文的「为什么是动态而不是均衡+限幅」「构建 / 注册 / 在播放器里使用」等章节仍然有效。
+
+
 把一个 20 年前的 32 位 Winamp DSP 插件（iZotope 早期的 **OctiMax** 音频增强器）通过「黑盒测量 → 从零重写」的方式，做成可在现代 64 位播放器里运行的通用 DSP。产物命名为 **BassMax**，避免与那个仍在流通的商业老插件重名。
 
 - **DirectShow 音频变换滤镜 (`bassmax_dshow.ax`)** —— 供 **MPC-HC / PotPlayer** 等 DirectShow 播放器

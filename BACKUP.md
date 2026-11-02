@@ -233,6 +233,6 @@ source\ 完整源码（等价于 git archive 定稿提交）
 
 ```
 git checkout -- .              # 只丢弃未提交的改动
-git reset --hard 2222c22       # 彻底回到定稿提交，文件一起还原
+git reset --hard v5-定稿       # 彻底回到定稿（tag 指向本快照对应的提交）
 git log --oneline              # 看历史，挑任意提交
 ```
