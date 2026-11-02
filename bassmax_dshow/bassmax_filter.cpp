@@ -106,7 +106,10 @@ BassMaxFilter::BassMaxFilter(LPUNKNOWN pUnk, HRESULT* phr)
     : CTransformFilter("BassMax Audio Enhancer", pUnk, CLSID_BassMax) {
     bassmax::InitSettings();
     ApplySettings();
-    if (bassmax::TrayEnabled()) { bassmax::StartTray(); m_trayOn = true; }   // 右下角图标 (引用计数)
+    // 托盘线程常驻: 除了图标, 还负责按 400ms 轮询注册表 -> 手改参数立刻生效。
+    // 图标是否出现由 TrayIcon 决定 (线程里判断), 所以这里不再按开关跳过一个线程。
+    bassmax::StartTray();
+    m_trayOn = true;
     if (phr) *phr = S_OK;
 }
 

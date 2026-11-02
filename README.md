@@ -138,7 +138,7 @@ regsvr32 "C:\...\bassmax_dshow\bassmax_dshow.ax"
 
 参数：默认为 `低音=+4.5dB、驱动=45%`（首次运行会把 v1 的旧「驱动」值迁移成 45%，因为旋钮含义从「推入限幅器」改成了「动态增强量」）。所有参数存在 `HKCU\Software\BassMax`（`Bass`/`Drive`/`TrayIcon` 字符串值），属性页与托盘界面改的就是它，多播放器共用同一份。
 
-### 设置界面（两种入口）
+### 设置界面（三种入口）
 
 **1) 播放器里的标准属性页**（DirectShow `ISpecifyPropertyPages`，属性页 CLSID `{C41F7D22-6B18-4A93-8E52-1D7A4F60C9B2}`，与滤镜同一个 .ax 导出）
 - MPC-HC：播放时**右键画面 → 滤镜 → BassMax Audio Enhancer**，即弹出属性页
@@ -147,12 +147,21 @@ regsvr32 "C:\...\bassmax_dshow\bassmax_dshow.ax"
 - 改动实时生效（音频线程检测到参数代号变化后重建系数），无需重开文件
 
 **2) 右下角托盘图标**
-- 播放器加载滤镜时自动出现，提示文字 “BassMax 音频增强”
-- **双击或右键**图标即打开同一个设置窗口
+- 播放器加载滤镜时自动出现，提示文字 “BassMax 已开启 / 已关闭”
+- **左键单击** = 打开/收起设置窗口；**右键单击** = 直接切总开关（参数保留）
 - 播放器退出 / 滤镜销毁时图标自动移除
-- 不想要的话：注册表 `HKCU\Software\BassMax` 新建字符串值 `TrayIcon` = `0`
+- 想彻底不显示：注册表 `HKCU\Software\BassMax` 的 `TrayIcon` 改 `0`，**400ms 内图标就消失**（不用重开播放器；改回 `1` 立刻长回来）
 
-> 说明：托盘图标由滤镜在播放器进程内创建（独立消息线程）。图标目前用的是系统默认应用图标，需要独立图标时在 `bassmax.rc` 增加 `IDI_BASSMAX ICON "xxx.ico"` 并在 `bassmax_tray.cpp` 里改成 `LoadIconW(g_hInst, ...)`。
+**3) 独立设置程序 `BassMaxConfig.exe`（播放器没启动时用）**
+- 与 `bassmax_dshow.ax` 放在同一目录，双击即可（GUI 子系统，无控制台窗口）
+- 弹出的是同一个设置窗口（`IDD_BASSMAX_POPUP`），改完立刻写注册表
+- 查找 `.ax` 的顺序：自身目录 → `%USERPROFILE%\MyMPC\Codecs\` → 注册表 `HKCR\CLSID\{C41F7D22-…}\InprocServer32`
+- 备用入口：`rundll32.exe bassmax_dshow.ax,BassMaxConfig`（同一导出）
+
+> **正在播放时也能改**：滤镜的托盘线程每 400ms 读一遍注册表，`Bass / Treble / Drive / Preset / Enabled / TrayIcon`
+> 任何一项被外部改动（手改注册表、独立设置程序写入）都会在一拍内套用，不需要重开文件或重启播放器。
+
+> 说明：托盘图标由滤镜在播放器进程内创建（独立消息线程）。图标资源是 `bassmax.ico`（开启）/ `bassmax_off.ico`（关闭）。
 
 ### 冒烟测试（已验证）
 - 加载 DLL → `DllGetClassObject` → `IClassFactory::CreateInstance(IBaseFilter)` 全部 `S_OK`

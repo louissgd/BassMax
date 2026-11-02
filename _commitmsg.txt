@@ -1,0 +1,18 @@
+独立设置程序 + TrayIcon 显性化 + 注册表热加载
+
+背景: TrayIcon 只被读取从未写入(注册表里根本没有这个值); 托盘线程只在滤镜构造
+时启动, 播放器不开就没有任何设置入口; 参数也只在构造时读一次。
+
+改动:
+- InitOnce 带 KEY_WRITE, 读完后把缺项整组写回 -> 六项值(含 TrayIcon)始终显性存在
+- ReadNum 同时接受 REG_SZ / REG_DWORD, 手改注册表不必关心类型
+- 新增 ReloadFromRegistry(): 值全在才采纳, 否则跳过(避免把参数刷成默认)
+- 托盘线程改为常驻 + 400ms 轮询: 参数变动热加载, TrayIcon 0/1 实时显隐
+- 补 TaskbarCreated 处理, 资源管理器重启后图标自动重挂
+- 新增 BassMaxConfig.exe; .ax 增加同名导出(CALLBACK 签名, 兼容系统加载器入口),
+  播放器不启动也能调出设置窗口
+- build.sh: EXE 目标文件放 obj/exe/ (否则被 obj/*.obj 带进 DLL);
+  清单走资源 RT_MANIFEST + /MANIFEST:NO, 绕开本机 PATH 里找不到的 mt.exe
+
+验收: settings_test 16/16 全过; BassMaxConfig.exe 窗口正常弹出并随关窗退出(两处
+安装位置均验证); TrayIcon=0 下创建滤镜不崩; 三处副本 .text 段一致; DSP 未改动。

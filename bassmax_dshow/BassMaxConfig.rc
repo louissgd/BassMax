@@ -1,0 +1,36 @@
+// BassMaxConfig.rc — 只给独立设置程序用 (EXE 图标 + 清单 + 版本信息)
+#include <windows.h>
+
+1 ICON "bassmax.ico"
+
+// 清单直接作为 RT_MANIFEST 资源嵌入 (配合链接器的 /MANIFEST:NO),
+// 这样不依赖 mt.exe —— 本机没把 SDK 的 bin 放进 PATH, 链接器找不到它。
+1 24 "config.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404b0"
+        BEGIN
+            VALUE "CompanyName",      "MyMPC"
+            VALUE "FileDescription",  "BassMax 音效设置"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "BassMaxConfig"
+            VALUE "OriginalFilename", "BassMaxConfig.exe"
+            VALUE "ProductName",      "BassMax Audio Enhancer"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200
+    END
+END

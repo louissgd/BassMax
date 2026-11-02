@@ -69,7 +69,7 @@ DC 阻断 → 三段分频 LR4 → 各段电平检测 → 线性拉伸 → 增�
 - **托盘交互**（2026-11-02 定稿）：**左键单击** = 打开/收起设置窗口；**右键单击** = 直接切总开关
   （开启 <-> 关闭，参数全部保留）。关闭时托盘图标变灰，开启时是彩色，一眼可辨。
   设置窗口里的勾选框、属性页、右键开关三处改动都会同步托盘图标（窗口内即时刷新；
-  外部改动由托盘线程 400ms 定时比对 `SettingsGen()` 兜底）。
+  外部改动由托盘线程 400ms 轮询注册表兜底）。
 - **窗口位置**：弹出时居中于当前显示器工作区（`MONITORINFO::rcWork`，自动避开任务栏），不再落在左上角。
 - **图标**：`make_icon.py` 生成两套 `ICO`（16/20/24/32/40/48/64/128/256 九档，每档单独超采样绘制）。
   - `bassmax.ico` = `IDI_APP`（301），开启态：深色圆角底 + 三条递升圆头竖柱（蓝→青），
@@ -77,7 +77,7 @@ DC 阻断 → 三段分频 LR4 → 各段电平检测 → 线性拉伸 → 增�
   - `bassmax_off.ico` = `IDI_APP_OFF`（302），关闭态：同形状灰阶，亮点压暗。
   - 16/20 px 自动简化成两根柱，否则小尺寸下三条会糊成一片。
 
-### 注册表项（`HKEY_CURRENT_USER\Software\BassMax`，全部为 REG_SZ 字符串）
+### 注册表项（`HKEY_CURRENT_USER\Software\BassMax`，写入统一 REG_SZ，读取兼容 REG_DWORD）
 
 | 值名 | 当前值 | 范围 | 含义 |
 |---|---|---|---|
@@ -87,10 +87,12 @@ DC 阻断 → 三段分频 LR4 → 各段电平检测 → 线性拉伸 → 增�
 | `Preset` | `4` | 0 … 5 | 风格：0 标准乐 / 1 古典乐 / 2 俱乐部 / 3 流行乐 / **4 爵士乐** / 5 摇滚乐 |
 | `Enabled` | `1` | 0 / 1 | 总开关；0 时 DSP 参数全部按零处理，逐样本原样输出 |
 | `DspVer` | `4` | 内部 | 配置版本。**手动改小会触发参数重写**（<3 驱动归零；<4 整套写回定稿默认） |
-| `TrayIcon` | *（未写入）* | 0 / 1 | 是否显示托盘图标，默认 1；写 0 可彻底隐藏，只能从属性页进设置 |
+| `TrayIcon` | `1` | 0 / 1 | 是否显示托盘图标，默认 1（**首次运行显性写入**）；改 0 后 400ms 内图标消失，改 1 立刻回来 |
 
 > 恢复定稿默认：删掉整个 `BassMax` 键再重启宿主，会自动重建为「爵士 +2 / +2 / 100% / 开启」。
-> 手改字符串后重启生效；超范围的值会被钳住，不会出错。
+> **写入用 REG_SZ，读取同时认 REG_DWORD**——手改时新建哪种类型都行。
+> 播放器在跑时改完 **400ms 内热加载**，不用重开文件；播放器没跑则是下次启动生效。
+> 超范围的值会被钳住，不会出错。
 
 ## 四、三曲评测（定稿默认：爵士 / 低音+2 / 高音+2 / 驱动 100，2026-11-02 23:44 实测）
 
@@ -357,3 +359,63 @@ OctIMAX 是纯线性 EQ，超声噪声原样穿过，所以它"没事"。
 `biquad_prec.cpp`（系数精度对照）、`dsd256_check.py`（DSD256 端到端音质对照）。
 
 **已知边界**：上限 1,536,000，DSD512（2,822,400）仍会被拒。
+
+---
+
+## 十二、独立设置程序 + 注册表显性化 / 热加载（2026-11-03 追加）
+
+### 12.1 原来的问题
+
+1. `TrayIcon` 只在初始化时**被读取**，从来不写：注册表里根本没这个值（实测 `GetValueNames()`
+   只有 Bass / Drive / DspVer / Preset / Enabled / Treble），想改也无从下手。
+2. 托盘线程在 `BassMaxFilter` 构造函数里按 `TrayEnabled()` 决定启不启动，
+   **播放器不启动就完全没有入口**调设置。
+3. 参数只在滤镜构造时读一次，之后改注册表要等下次开文件才生效。
+
+### 12.2 改法
+
+**a) 六项值全部显性落盘。** `InitOnce` 里带 `KEY_WRITE` 打开键，读完后若发现缺项
+（或触发 DspVer 迁移）就整套 `SaveTo()` 写回，`TrayIcon` 从此固定存在。
+
+**b) 读值同时接受 REG_SZ 与 REG_DWORD。** `ReadNum()` 两种类型都认，
+手改注册表时新建"字符串值"或"DWORD 值"都能生效，不必猜类型。
+
+**c) 托盘线程常驻 + 400ms 轮询。**
+- 构造函数无条件 `StartTray()`（不再按开关跳过），图标是否出现交给线程判断；
+- 定时器里 `ReloadFromRegistry()` → 有任何一项变化就递增变更代号 → 音频线程下一拍 `ApplySettings()`；
+- 同一拍里按 `TrayEnabled()` 调 `ShowIcon()` / `HideIcon()`，所以 `TrayIcon` 0↔1 **实时**生效；
+- 顺带补了 `TaskbarCreated` 广播处理：资源管理器重启后图标自动重新挂上。
+
+**d) 独立设置程序 `BassMaxConfig.exe`（x64，46,080 字节）。**
+UI 不重写一份——`.ax` 导出 `BassMaxConfig`（`extern "C" __declspec(dllexport)`，`CALLBACK` 签名，
+rundll32 兼容），EXE 只负责找 `.ax`（自身目录 → `%USERPROFILE%\MyMPC\Codecs` → `HKCR\CLSID\...\InprocServer32`）
+然后 `LoadLibrary` + 调用。导出函数内部自建消息循环，关窗即返回。
+
+**e) 顺带修的坑：** `build.sh` 里 `.ax` 链接用 `obj/*.obj` 通配符，
+所以 EXE 的目标文件必须放 `obj/exe/`，否则会被一起链进 DLL。
+另外链接器需要 `mt.exe` 嵌入清单，而本机 SDK 的 bin 不在 PATH —— 改成资源脚本里
+`1 24 "config.manifest"` + `/MANIFEST:NO`，绕开 mt.exe。
+
+### 12.3 验收
+
+`settings_test.cpp`（与 `bassmax_settings.cpp` 一起编译，16 项全过）：
+
+| 用例 | 结果 |
+|---|---|
+| 初始化后六项值都存在于注册表 | PASS |
+| 外部改 `Bass` 字符串 → `ReloadFromRegistry` 代号+1、值变 5.5 | PASS |
+| 外部用 DWORD 写 `Bass=7` → 同样识别 | PASS |
+| `TrayIcon=0` → `TrayEnabled()` false；回 1 → true | PASS |
+| 删掉某一项时本次不采纳（代号不变，避免刷成默认） | PASS |
+| 删掉 `TrayIcon` 后新进程启动自动补回 | PASS（实测 `GetValueNames()` 又出现 `TrayIcon = 1`） |
+| 超范围 `Bass=99` → 钳到 +12 | PASS |
+
+活体验收：
+- `BassMaxConfig.exe` 启动 → 出现窗口标题「BassMax 音频增强」→ `CloseMainWindow` 后进程**正常退出**（消息循环正确收尾）
+- 从 `~\MyMPC\Codecs\` 和 `D:\MyMPC_CG_x86_x64\3.Core\1.Core\` 两处启动均正常
+- `TrayIcon=0` 状态下创建滤镜（pin_test）**不崩不挂**，退出码 0
+- 三处副本（源码产物 / 已安装 / D 盘母版）`.text` 段 SHA256 一致：`7a64d5d4ca469371…`（63,488 B）
+- `.ax` 导出表新增 `BassMaxConfig`（ordinal 1），其余四个导出不变
+- `BassMaxConfig.exe`：`machine=0x8664`、`subsystem=2 (Windows GUI)`、清单已嵌入（comctl32 v6 + permonitorv2 + asInvoker）
+
+**没动 DSP**：这次只碰设置层与 UI 入口，`bassmax_core.hpp` 一字未改，音色零变化。
