@@ -56,7 +56,9 @@ Fmt ParseFmt(const CMediaType* mt) {
         f.bytes = bits / 8;
     }
     if (f.ch < 1 || f.ch > 8) return f;
-    if (f.sr < 8000 || f.sr > 768000) return f;
+    // 上限 1,536,000 Hz: 覆盖 DSD256 (5,644,800/4 = 1,411,200) 及以上余量。
+    // 原上限 768,000 会把 DSD256 直接判为不支持 -> 滤镜不挂载、听感等于失效。
+    if (f.sr < 8000 || f.sr > 1536000) return f;
     if (wf->nBlockAlign != f.ch * f.bytes) return f;     // 步长必须自洽, 否则不接
     f.ok = true;
     return f;

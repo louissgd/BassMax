@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     printf("preset=%d drive=%.2f  (限幅器窗口 W = 5ms*sr)\n\n", preset, drive);
     printf("%-10s %-10s %-12s %s\n", "采样率", "限幅窗口W", "实时倍率", "判定");
 
-    const float rates[] = { 44100.f, 48000.f, 96000.f, 176400.f, 352800.f, 705600.f };
+    const float rates[] = { 44100.f, 48000.f, 96000.f, 176400.f, 352800.f, 705600.f, 1411200.f };
     for (float sr : rates) {
         Res r = runOne(sr, 3.0f, preset, drive);
         int W = (int)(Tuning::LIM_LOOK * sr);

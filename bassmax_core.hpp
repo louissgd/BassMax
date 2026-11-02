@@ -45,98 +45,102 @@ inline float l2g(float lin) { return 8.685889638f * std::log((std::max)(lin, 1e-
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // ---- 二阶 RBJ 双二阶 ----
+// 系数与状态一律用 double。原因: 分频低点 120 Hz 在 1,411,200 Hz 下 f0/sr 只有 8.5e-5,
+// 用 float 算 cos(w0) 时 1-cw 只剩 1~2 位有效数字, 系数本身就已经错了 (实测 40 Hz 偏 1.7 dB)。
+// 这是定点/浮点小频率的经典陷阱 —— 精确计算必须留够位宽, 而不是靠公式。
 class Biquad {
 public:
-    void set(float b0_, float b1_, float b2_, float a1_, float a2_) {
+    void set(double b0_, double b1_, double b2_, double a1_, double a2_) {
         b0=b0_; b1=b1_; b2=b2_; a1=a1_; a2=a2_; x1=x2=y1=y2=0;
     }
     void clear() { x1=x2=y1=y2=0; }
     float run(float x) {
-        float y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2;
-        x2=x1; x1=x; y2=y1; y1=y; return y;
+        double y = b0*(double)x + b1*x1 + b2*x2 - a1*y1 - a2*y2;
+        x2=x1; x1=(double)x; y2=y1; y1=y; return (float)y;
     }
 private:
-    float b0=1,b1=0,b2=0,a1=0,a2=0,x1=0,x2=0,y1=0,y2=0;
+    double b0=1,b1=0,b2=0,a1=0,a2=0,x1=0,x2=0,y1=0,y2=0;
 };
 
 // ---- 系数生成 ----
-inline void make_butter_lp(float f0, float sr, float& b0, float& b1, float& b2,
-                           float& a1, float& a2) {
-    const float Q = 0.70710678f;
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw/(2.0f*Q);
-    float a0 = 1.0f + alpha;
-    b0 = (1.0f - cw)*0.5f/a0; b1 = (1.0f - cw)/a0; b2 = b0;
-    a1 = (-2.0f*cw)/a0;       a2 = (1.0f - alpha)/a0;
+// 全部用 double 计算: 极低归一化频率下 (DSD 速率) float 的 cos(w0) 精度不足以描述滤波器。
+inline void make_butter_lp(float f0, float sr, double& b0, double& b1, double& b2,
+                           double& a1, double& a2) {
+    const double Q = 0.70710678118654752;
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw/(2.0*Q);
+    double a0 = 1.0 + alpha;
+    b0 = (1.0 - cw)*0.5/a0; b1 = (1.0 - cw)/a0; b2 = b0;
+    a1 = (-2.0*cw)/a0;      a2 = (1.0 - alpha)/a0;
 }
-inline void make_butter_hp(float f0, float sr, float& b0, float& b1, float& b2,
-                           float& a1, float& a2) {
-    const float Q = 0.70710678f;
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw/(2.0f*Q);
-    float a0 = 1.0f + alpha;
-    b0 = (1.0f + cw)*0.5f/a0; b1 = -(1.0f + cw)/a0; b2 = b0;
-    a1 = (-2.0f*cw)/a0;       a2 = (1.0f - alpha)/a0;
+inline void make_butter_hp(float f0, float sr, double& b0, double& b1, double& b2,
+                           double& a1, double& a2) {
+    const double Q = 0.70710678118654752;
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw/(2.0*Q);
+    double a0 = 1.0 + alpha;
+    b0 = (1.0 + cw)*0.5/a0; b1 = -(1.0 + cw)/a0; b2 = b0;
+    a1 = (-2.0*cw)/a0;      a2 = (1.0 - alpha)/a0;
 }
-inline void make_lr4_lp(float f0, float sr, float& b0, float& b1, float& b2,
-                        float& a1, float& a2) { make_butter_lp(f0, sr, b0,b1,b2,a1,a2); }
-inline void make_lr4_hp(float f0, float sr, float& b0, float& b1, float& b2,
-                        float& a1, float& a2) { make_butter_hp(f0, sr, b0,b1,b2,a1,a2); }
+inline void make_lr4_lp(float f0, float sr, double& b0, double& b1, double& b2,
+                        double& a1, double& a2) { make_butter_lp(f0, sr, b0,b1,b2,a1,a2); }
+inline void make_lr4_hp(float f0, float sr, double& b0, double& b1, double& b2,
+                        double& a1, double& a2) { make_butter_hp(f0, sr, b0,b1,b2,a1,a2); }
 
 // 指定 Q 的二阶低通。用于多级级联凑高阶 (超声保护用)。
-inline void make_lp_q(float f0, float Q, float sr, float& b0, float& b1, float& b2,
-                      float& a1, float& a2) {
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw/(2.0f*Q);
-    float a0 = 1.0f + alpha;
-    b0 = (1.0f - cw)*0.5f/a0; b1 = (1.0f - cw)/a0; b2 = b0;
-    a1 = (-2.0f*cw)/a0;       a2 = (1.0f - alpha)/a0;
+inline void make_lp_q(float f0, float Q, float sr, double& b0, double& b1, double& b2,
+                      double& a1, double& a2) {
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw/(2.0*(double)Q);
+    double a0 = 1.0 + alpha;
+    b0 = (1.0 - cw)*0.5/a0; b1 = (1.0 - cw)/a0; b2 = b0;
+    a1 = (-2.0*cw)/a0;      a2 = (1.0 - alpha)/a0;
 }
 
 // RBJ 峰值 (bell)
 inline void make_peak(float f0, float Q, float gainDb, float sr,
-                      float& b0, float& b1, float& b2, float& a1, float& a2) {
+                      double& b0, double& b1, double& b2, double& a1, double& a2) {
     if (std::fabs(gainDb) < 0.01f) { b0=1; b1=0; b2=0; a1=0; a2=0; return; }
-    float A = std::pow(10.0f, gainDb/40.0f);
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw/(2.0f*Q);
-    float a0 = 1.0f + alpha/A;
-    b0 = (1.0f + alpha*A)/a0; b1 = (-2.0f*cw)/a0; b2 = (1.0f - alpha*A)/a0;
-    a1 = (-2.0f*cw)/a0;       a2 = (1.0f - alpha/A)/a0;
+    double A = std::pow(10.0, (double)gainDb/40.0);
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw/(2.0*(double)Q);
+    double a0 = 1.0 + alpha/A;
+    b0 = (1.0 + alpha*A)/a0; b1 = (-2.0*cw)/a0; b2 = (1.0 - alpha*A)/a0;
+    a1 = (-2.0*cw)/a0;       a2 = (1.0 - alpha/A)/a0;
 }
 
 // RBJ 低架 / 高架 (S = 1)
 inline void make_lowshelf(float f0, float gainDb, float sr,
-                          float& b0, float& b1, float& b2, float& a1, float& a2) {
+                          double& b0, double& b1, double& b2, double& a1, double& a2) {
     if (std::fabs(gainDb) < 0.01f) { b0=1; b1=0; b2=0; a1=0; a2=0; return; }
-    float A = std::pow(10.0f, gainDb/40.0f);
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw*0.5f*std::sqrt(2.0f);      // S = 1 时 sin(w0)/2 * sqrt(2)
-    float a0 = (A+1.0f) + (A-1.0f)*cw + 2.0f*std::sqrt(A)*alpha;
-    b0 =      A*((A+1.0f) - (A-1.0f)*cw + 2.0f*std::sqrt(A)*alpha)/a0;
-    b1 =  2.0f*A*((A-1.0f) - (A+1.0f)*cw)/a0;
-    b2 =      A*((A+1.0f) - (A-1.0f)*cw - 2.0f*std::sqrt(A)*alpha)/a0;
-    a1 = -2.0f*((A-1.0f) + (A+1.0f)*cw)/a0;
-    a2 =      ((A+1.0f) + (A-1.0f)*cw - 2.0f*std::sqrt(A)*alpha)/a0;
+    double A = std::pow(10.0, (double)gainDb/40.0);
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw*0.5*1.4142135623730951;      // S = 1 时 sin(w0)/2 * sqrt(2)
+    double a0 = (A+1.0) + (A-1.0)*cw + 2.0*std::sqrt(A)*alpha;
+    b0 =      A*((A+1.0) - (A-1.0)*cw + 2.0*std::sqrt(A)*alpha)/a0;
+    b1 =  2.0*A*((A-1.0) - (A+1.0)*cw)/a0;
+    b2 =      A*((A+1.0) - (A-1.0)*cw - 2.0*std::sqrt(A)*alpha)/a0;
+    a1 = -2.0*((A-1.0) + (A+1.0)*cw)/a0;
+    a2 =      ((A+1.0) + (A-1.0)*cw - 2.0*std::sqrt(A)*alpha)/a0;
 }
 inline void make_highshelf(float f0, float gainDb, float sr,
-                           float& b0, float& b1, float& b2, float& a1, float& a2) {
+                           double& b0, double& b1, double& b2, double& a1, double& a2) {
     if (std::fabs(gainDb) < 0.01f) { b0=1; b1=0; b2=0; a1=0; a2=0; return; }
-    float A = std::pow(10.0f, gainDb/40.0f);
-    float w0 = 2.0f*3.14159265f*f0/sr;
-    float cw = std::cos(w0), sw = std::sin(w0);
-    float alpha = sw*0.5f*std::sqrt(2.0f);
-    float a0 = (A+1.0f) - (A-1.0f)*cw + 2.0f*std::sqrt(A)*alpha;
-    b0 =      A*((A+1.0f) + (A-1.0f)*cw + 2.0f*std::sqrt(A)*alpha)/a0;
-    b1 = -2.0f*A*((A-1.0f) + (A+1.0f)*cw)/a0;
-    b2 =      A*((A+1.0f) + (A-1.0f)*cw - 2.0f*std::sqrt(A)*alpha)/a0;
-    a1 =  2.0f*((A-1.0f) - (A+1.0f)*cw)/a0;
-    a2 =      ((A+1.0f) - (A-1.0f)*cw - 2.0f*std::sqrt(A)*alpha)/a0;
+    double A = std::pow(10.0, (double)gainDb/40.0);
+    double w0 = 2.0*3.14159265358979324*(double)f0/(double)sr;
+    double cw = std::cos(w0), sw = std::sin(w0);
+    double alpha = sw*0.5*1.4142135623730951;
+    double a0 = (A+1.0) - (A-1.0)*cw + 2.0*std::sqrt(A)*alpha;
+    b0 =      A*((A+1.0) + (A-1.0)*cw + 2.0*std::sqrt(A)*alpha)/a0;
+    b1 = -2.0*A*((A-1.0) + (A+1.0)*cw)/a0;
+    b2 =      A*((A+1.0) + (A-1.0)*cw - 2.0*std::sqrt(A)*alpha)/a0;
+    a1 =  2.0*((A-1.0) - (A+1.0)*cw)/a0;
+    a2 =      ((A+1.0) - (A-1.0)*cw - 2.0*std::sqrt(A)*alpha)/a0;
 }
 
 // ---- 6 个 EQ 预设: { 100Hz 低架, 300Hz, 900Hz, 3kHz, 9kHz 高架 } (dB) ----
@@ -329,7 +333,7 @@ public:
     void reset(float sr) {
         // 直流阻断系数必须随采样率换算, 见 setParams 里的说明。
         // sr<=0 表示"只清状态, 不改参数"(Channel 包装会这样调)。
-        if (sr > 0.f) dcR = std::pow(0.995f, 44100.0f / sr);
+        if (sr > 0.f) dcR = std::pow(0.995, 44100.0 / (double)sr);
         for (int c = 0; c < 2; ++c) {
             sumA[c].clear(); sumB[c].clear();
             hiA[c].clear();  hiB[c].clear();
@@ -353,7 +357,7 @@ public:
         // ---- 静态 EQ: 预设 + 低音旋钮 ----
         const Preset& ps = presets()[clampi(p.preset, 0, 5)];
         static const float kFreq[4] = { 300.f, 900.f, 3000.f };
-        float b0,b1,b2,a1,a2;
+        double b0,b1,b2,a1,a2;
         for (int c = 0; c < 2; ++c) {
             make_lowshelf(Tuning::BASS_FREQ, ps.ls + p.bass, sr, b0,b1,b2,a1,a2);
             eq[c][0].set(b0,b1,b2,a1,a2);
@@ -375,10 +379,10 @@ public:
                 std::fabs(p.trim1k)) > 0.01f;
 
         // ---- 三段分频 ----
-        float lb0,lb1,lb2,la1,la2, hb0,hb1,hb2,ha1,ha2;
+        double lb0,lb1,lb2,la1,la2, hb0,hb1,hb2,ha1,ha2;
         make_lr4_lp(Tuning::XOVER_LO, sr, lb0,lb1,lb2,la1,la2);
         make_lr4_hp(Tuning::XOVER_LO, sr, hb0,hb1,hb2,ha1,ha2);
-        float sl0,sl1,sl2,sa1,sa2, sh0,sh1,sh2,sh_a1,sh_a2;
+        double sl0,sl1,sl2,sa1,sa2, sh0,sh1,sh2,sh_a1,sh_a2;
         make_lr4_lp(Tuning::XOVER_HI, sr, sl0,sl1,sl2,sa1,sa2);
         make_lr4_hp(Tuning::XOVER_HI, sr, sh0,sh1,sh2,sh_a1,sh_a2);
         for (int c = 0; c < 2; ++c) {
@@ -393,7 +397,7 @@ public:
         if (usOn) {
             // 8 阶巴特沃斯 -> 4 级二阶级联, 用巴特沃斯极点对应的 Q
             static const float kUsQ[4] = { 0.50980f, 0.60135f, 0.89998f, 2.56292f };
-            float g0,g1,g2,ga1,ga2;
+            double g0,g1,g2,ga1,ga2;
             for (int c = 0; c < 2; ++c)
                 for (int k = 0; k < 4; ++k) {
                     make_lp_q(Tuning::US_FREQ, kUsQ[k], sr, g0,g1,g2,ga1,ga2);
@@ -451,9 +455,10 @@ public:
             if (eqOn) {
                 for (int k = 0; k < 5; ++k) { xl = eq[0][k].run(xl); xr = eq[1][k].run(xr); }
             }
-            // DC 阻断 (系数按采样率换算, 见 dcR)
-            float tl = xl - dcx[0] + dcR*dcy[0]; dcx[0]=xl; dcy[0]=tl; xl = tl;
-            float tr = xr - dcx[1] + dcR*dcy[1]; dcx[1]=xr; dcy[1]=tr; xr = tr;
+            // DC 阻断 (系数按采样率换算, 见 dcR)。用 double 累加: 极点极靠近 1,
+            // float 下 x-dcx 这一步会对低频产生可观的舍入噪声。
+            double tl = (double)xl - dcx[0] + dcR*dcy[0]; dcx[0]=(double)xl; dcy[0]=tl; xl = (float)tl;
+            double tr = (double)xr - dcx[1] + dcR*dcy[1]; dcx[1]=(double)xr; dcy[1]=tr; xr = (float)tr;
             // 三段分频: 先在 2500Hz 分高低, 再从低段在 120Hz 分低/中 (LR4)
             float al = sumB[0].run(sumA[0].run(xl));
             float hl = hiB[0].run(hiA[0].run(xl));
@@ -521,8 +526,8 @@ private:
     Biquad us[2][4];                    // 超声保护 (8 阶低通) 4 级级联
     bool   usOn = false;
     bool   postOn = false;
-    float  dcR = 0.995f;                // DC 阻断极点, 实际值由采样率决定
-    float dcx[2] = {0,0}, dcy[2] = {0,0};
+    double dcR = 0.995;                 // DC 阻断极点, 实际值由采样率决定
+    double dcx[2] = {0,0}, dcy[2] = {0,0};
     Follower fLo;
     Smooth smMid, smHi;
     float gAtt = 0.f, gRel = 0.f, gsLo = 0.f, gsMid = 0.f, gsHi = 0.f;
