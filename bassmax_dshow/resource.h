@@ -31,3 +31,4 @@
 #define IDC_SLD_TREBLE        1018
 #define IDC_TXT_TREBLE        1019
 #define IDC_LBL_TREBLE        1020
+#define IDC_HINT4             1021   // 声道适用范围说明
