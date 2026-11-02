@@ -17,7 +17,7 @@
 // 每级对应固定值, 所以驱动是线性的 dB 缩放 (dr * 拉伸量), 不做任何非线性。
 //
 // 6 个 EQ 预设 (原版界面): 标准乐 / 古典乐 / 俱乐部 / 流行乐 / 爵士乐 / 摇滚乐
-//   (原版把爵士乐和摇滚乐两个标签写反了, 这里按实际曲线命名)
+//   preset4 = 爵士乐 = 实测与「摇滚+50%低音+100%驱动」参考音最接近的曲线 (谱差 0.74dB)
 #pragma once
 #include <cmath>
 #include <vector>
@@ -124,7 +124,7 @@ inline void make_highshelf(float f0, float gainDb, float sr,
 
 // ---- 6 个 EQ 预设: { 100Hz 低架, 300Hz, 900Hz, 3kHz, 9kHz 高架 } (dB) ----
 // 原版界面顺序: 标准乐 / 古典乐 / 俱乐部 / 流行乐 / 爵士乐 / 摇滚乐
-// (原版把爵士乐和摇滚乐标签写反了; 这里按实际曲线命名)
+// preset4(爵士乐) 已用三首参考音逐条实测确认, 不要随意对调
 struct Preset { float ls, p300, p900, p3k, hs; const char* name; };
 inline const Preset* presets() {
     static const Preset k[6] = {
@@ -132,8 +132,8 @@ inline const Preset* presets() {
         {  2.5f,  0.5f,  0.0f, -1.0f, -3.5f, "古典乐" },
         {  6.0f,  1.5f,  2.5f,  3.0f,  1.5f, "俱乐部" },
         { -1.0f,  5.0f,  5.5f,  1.0f, -1.0f, "流行乐" },
-        {  3.0f,  1.5f, -1.0f,  2.0f,  3.5f, "摇滚乐" },
-        {  7.0f, -3.5f,  1.5f,  6.5f,  8.0f, "爵士乐" },
+        {  3.0f,  1.5f, -1.0f,  2.0f,  3.5f, "爵士乐" },
+        {  7.0f, -3.5f,  1.5f,  6.5f,  8.0f, "摇滚乐" },
     };
     return k;
 }

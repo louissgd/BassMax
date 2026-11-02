@@ -25,3 +25,6 @@
 #define IDC_PRE4              1015
 #define IDC_PRE5              1016
 #define IDC_CHK_ON            1017   // 总开关 (启用 / 完全旁路)
+#define IDC_SLD_TREBLE        1018
+#define IDC_TXT_TREBLE        1019
+#define IDC_LBL_TREBLE        1020

@@ -131,11 +131,13 @@ void BassMaxFilter::ApplySettings() {
         m_params.bass   = s.bass;
         m_params.drive  = s.drive;
         m_params.preset = s.preset;
+        m_params.trim9k = s.treble;      // 高音 = 9kHz 高架增益
     } else {
         // 总开关关闭: 全部归零 -> Core 内部判定 bypass, 逐样本直接返回, 不做任何处理
         m_params.bass   = 0.0f;
         m_params.drive  = 0.0f;
         m_params.preset = 0;
+        m_params.trim9k = 0.0f;
     }
     ApplyToAllCores();
     InterlockedExchange(&m_gen, bassmax::SettingsGen());

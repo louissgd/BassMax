@@ -12,10 +12,12 @@ namespace bassmax {
 // 驱动: 滑块 0..10  -> 0 / 10 / ... / 100 %   (每级一个固定值)
 inline Settings UiReadSettings(HWND hwnd) {
     Settings s;
-    int b = (int)SendDlgItemMessageW(hwnd, IDC_SLD_BASS,  TBM_GETPOS, 0, 0);
-    int d = (int)SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE, TBM_GETPOS, 0, 0);
-    s.bass  = (b - 120) / 10.0f;
-    s.drive = d / 10.0f;
+    int b = (int)SendDlgItemMessageW(hwnd, IDC_SLD_BASS,   TBM_GETPOS, 0, 0);
+    int t = (int)SendDlgItemMessageW(hwnd, IDC_SLD_TREBLE, TBM_GETPOS, 0, 0);
+    int d = (int)SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE,  TBM_GETPOS, 0, 0);
+    s.bass   = (b - 120) / 10.0f;
+    s.treble = (t - 120) / 10.0f;
+    s.drive  = d / 10.0f;
     s.preset = 0;
     for (int i = 0; i < 6; ++i) {
         if (IsDlgButtonChecked(hwnd, IDC_PRE0 + i) == BST_CHECKED) { s.preset = i; break; }
@@ -29,12 +31,15 @@ inline void UiUpdateLabels(HWND hwnd) {
     wchar_t buf[32];
     swprintf_s(buf, L"%+.1f dB", s.bass);
     SetDlgItemTextW(hwnd, IDC_TXT_BASS, buf);
+    swprintf_s(buf, L"%+.1f dB", s.treble);
+    SetDlgItemTextW(hwnd, IDC_TXT_TREBLE, buf);
     swprintf_s(buf, L"%d %%", (int)(s.drive * 100.f + 0.5f));
     SetDlgItemTextW(hwnd, IDC_TXT_DRIVE, buf);
     // 总开关关掉时, 其余控件置灰 (参数保留, 重新勾上就恢复)
-    const int kids[] = { IDC_SLD_BASS, IDC_SLD_DRIVE, IDC_TXT_BASS, IDC_TXT_DRIVE,
+    const int kids[] = { IDC_SLD_BASS, IDC_SLD_DRIVE, IDC_SLD_TREBLE,
+                         IDC_TXT_BASS, IDC_TXT_DRIVE, IDC_TXT_TREBLE,
                          IDC_PRE0, IDC_PRE1, IDC_PRE2, IDC_PRE3, IDC_PRE4, IDC_PRE5 };
-    for (int k = 0; k < 10; ++k) {
+    for (int k = 0; k < 12; ++k) {
         HWND h = GetDlgItem(hwnd, kids[k]);
         if (h) EnableWindow(h, s.enabled ? TRUE : FALSE);
     }
@@ -42,9 +47,11 @@ inline void UiUpdateLabels(HWND hwnd) {
 
 inline void UiLoadFromSettings(HWND hwnd) {
     Settings s = GetSettings();
-    SendDlgItemMessageW(hwnd, IDC_SLD_BASS,  TBM_SETRANGE, TRUE, MAKELPARAM(0, 240));
-    SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE, TBM_SETRANGE, TRUE, MAKELPARAM(0, 10));
-    SendDlgItemMessageW(hwnd, IDC_SLD_BASS,  TBM_SETPOS, TRUE, (LPARAM)(int)((s.bass + 12.f) * 10.f + 0.5f));
+    SendDlgItemMessageW(hwnd, IDC_SLD_BASS,   TBM_SETRANGE, TRUE, MAKELPARAM(0, 240));
+    SendDlgItemMessageW(hwnd, IDC_SLD_TREBLE, TBM_SETRANGE, TRUE, MAKELPARAM(0, 240));
+    SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE,  TBM_SETRANGE, TRUE, MAKELPARAM(0, 10));
+    SendDlgItemMessageW(hwnd, IDC_SLD_BASS,   TBM_SETPOS, TRUE, (LPARAM)(int)((s.bass + 12.f) * 10.f + 0.5f));
+    SendDlgItemMessageW(hwnd, IDC_SLD_TREBLE, TBM_SETPOS, TRUE, (LPARAM)(int)((s.treble + 12.f) * 10.f + 0.5f));
     SendDlgItemMessageW(hwnd, IDC_SLD_DRIVE, TBM_SETPOS, TRUE, (LPARAM)(int)(s.drive * 10.f + 0.5f));
     CheckDlgButton(hwnd, IDC_CHK_ON, s.enabled ? BST_CHECKED : BST_UNCHECKED);
     for (int i = 0; i < 6; ++i)

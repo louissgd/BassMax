@@ -8,7 +8,7 @@ namespace bassmax {
 
 static CRITICAL_SECTION s_cs;
 static INIT_ONCE        s_once = INIT_ONCE_STATIC_INIT;
-static Settings         s_val = { 0.0f, 0.0f, 0, true };
+static Settings         s_val = { 0.0f, 0.0f, 0.0f, 0, true };
 static volatile LONG    s_gen = 0;
 static bool             s_tray = true;
 
@@ -28,6 +28,11 @@ static BOOL CALLBACK InitOnce(PINIT_ONCE, PVOID, PVOID*) {
         if (RegQueryValueExW(hk, L"Bass", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
             buf[(sizeof(buf) / sizeof(buf[0])) - 1] = 0;
             s_val.bass = (float)(float)wcstod(buf, nullptr);
+        }
+        sz = sizeof(buf); type = 0;
+        if (RegQueryValueExW(hk, L"Treble", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
+            buf[(sizeof(buf) / sizeof(buf[0])) - 1] = 0;
+            s_val.treble = (float)wcstod(buf, nullptr);
         }
         sz = sizeof(buf); type = 0;
         if (RegQueryValueExW(hk, L"Drive", 0, &type, (BYTE*)buf, &sz) == ERROR_SUCCESS) {
@@ -52,6 +57,7 @@ static BOOL CALLBACK InitOnce(PINIT_ONCE, PVOID, PVOID*) {
         RegCloseKey(hk);
     }
     s_val.bass   = ClampBass(s_val.bass);
+    s_val.treble = ClampBass(s_val.treble);
     s_val.drive  = ClampDrive(s_val.drive);
     s_val.preset = ClampPreset(s_val.preset);
 
@@ -99,6 +105,8 @@ static void SaveLocked(const Settings& s) {
     WCHAR buf[64];
     swprintf_s(buf, L"%.1f", s.bass);
     RegSetValueExW(hk, L"Bass", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
+    swprintf_s(buf, L"%.1f", s.treble);
+    RegSetValueExW(hk, L"Treble", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
     swprintf_s(buf, L"%.2f", s.drive);
     RegSetValueExW(hk, L"Drive", 0, REG_SZ, (const BYTE*)buf, (DWORD)((wcslen(buf) + 1) * sizeof(WCHAR)));
     swprintf_s(buf, L"%d", s.preset);
@@ -112,6 +120,7 @@ LONG SetSettings(const Settings& in) {
     InitSettings();
     Settings s;
     s.bass    = ClampBass(in.bass);
+    s.treble  = ClampBass(in.treble);
     s.drive   = ClampDrive(in.drive);
     s.preset  = ClampPreset(in.preset);
     s.enabled = in.enabled;
