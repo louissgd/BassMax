@@ -167,8 +167,10 @@ struct Tuning {
     static constexpr float LO_ATT = 0.005f, LO_REL = 0.200f;
     // 增益平滑: 电平抖动会 1:1 变成增益抖动 -> 听感「波浪起伏」。
     // 参考插件的增益 10ms 变化 p95 只有 0.7~1.2dB, 我们不加平滑是 4~12dB。
-    // 收(gain 变小)用 8ms 保瞬态, 放(gain 变大)用 200ms 防抖。
-    static constexpr float G_ATT = 0.030f, G_REL = 0.250f;
+    // 收(gain 变小)用 30ms 保瞬态, 放(gain 变大)用 400ms 防抖。
+    // 2026-11-02 用户试听: 250ms 在「风雨无阻」吉他连续分解和弦下仍有起伏,
+    //   400ms 明显更稳且不发闷, 定为默认。
+    static constexpr float G_ATT = 0.030f, G_REL = 0.400f;
 
     // 末端: 前瞻削峰 + 软保护
     static constexpr float LIM_LOOK = 0.005f;
