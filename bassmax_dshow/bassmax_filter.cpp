@@ -134,7 +134,9 @@ void BassMaxFilter::ApplySettings() {
     bassmax::Settings s = bassmax::GetSettings();
     if (s.enabled) {
         m_params.bass   = s.bass;
-        m_params.drive  = s.drive;
+        // 驱动: >2 声道时自动限制 (见 bassmax_filter.h 的说明)。只影响本次生效值,
+        // 注册表里的用户设置保持原样, 换成 2.0 输入就恢复。
+        m_params.drive  = BassMaxEffectiveDrive(s.drive, m_ch);
         m_params.preset = s.preset;
         m_params.trim9k = s.treble;      // 高音 = 9kHz 高架增益
     } else {
@@ -254,7 +256,7 @@ HRESULT BassMaxFilter::SetMediaType(PIN_DIRECTION dir, const CMediaType* pmt) {
             if (m_scratch.size() < 4096) m_scratch.resize(4096);
         } catch (...) { return E_OUTOFMEMORY; }
         for (size_t i = 0; i < m_cores.size(); ++i) m_cores[i].reset((float)m_sr);
-        ApplyToAllCores();
+        ApplySettings();          // m_ch 变了 -> 重算驱动上限 (不能只 ApplyToAllCores)
     }
     return S_OK;
 }

@@ -17,6 +17,20 @@ static const GUID CLSID_BassMaxPage = {
     0xc41f7d22, 0x6b18, 0x4a93, {0x8e,0x52,0x1d,0x7a,0x4f,0x60,0xc9,0xb2}
 };
 
+// ---- 多声道保护 --------------------------------------------------------------
+// 实测 (7.1 + 耳机): 滤镜确实生效, 但听感发糊、一直顶着上限。原因是结构性的 ——
+// 每对声道各自把动态拉到接近满电平, 下混求和后必然远超 0 dBFS, 限幅器反复触发。
+// 所以输入 > 2 声道时把驱动自动压到上限。
+//   * 只压不抬: 用户本来就设得比 60% 低, 原样保留;
+//   * 注册表里的值一个字节都不改: 切回立体声立刻恢复用户原本的驱动;
+//   * 单独提成纯函数是为了能脱离 DirectShow 直接单测。
+static const float kBassMaxMultiChDriveCap = 0.60f;
+
+inline float BassMaxEffectiveDrive(float drive, int channels) {
+    if (channels > 2 && drive > kBassMaxMultiChDriveCap) return kBassMaxMultiChDriveCap;
+    return drive;
+}
+
 // KSDATAFORMAT 子类型 (用于解析 WAVEFORMATEXTENSIBLE, 避免链接 initguid)。
 static const GUID KSDATAFORMAT_SUBTYPE_PCM_GUID = {
     0x00000001, 0x0000, 0x0010, {0x80,0x00,0x00,0xaa,0x00,0x38,0x9b,0x71}

@@ -590,3 +590,67 @@ RegDeleteValueW(hk, L"DspVer");    // 顺手清掉遗留值, 免得注册表留�
 - 三处一致：源码产物 / `~\MyMPC\Codecs\` / `D:\MyMPC_CG_x86_x64\3.Core\1.Core\`。
 - 归档：`_release/BassMax_1.0.2_2026-11-03/` + zip + `SHA256SUMS.txt`；git 标签 `v1.0.2`。
 - 1.0.1 归档删除（tag `v1.0.1` 可复现）。DSP 核心与滤镜处理逻辑**一行未动**，只改了资源与文档。
+
+---
+
+## 16. 1.0.3（2026-11-03）— 多声道自动限制驱动
+
+### 16.1 动机
+
+用户实测 7.1 文件（耳机）：**滤镜生效但增幅被放大，发糊、一直顶着上限**。1.0.2 只是在界面上写了
+「建议 1-2 声道」，没有代码层面的保护——用户设 100% 时多声道照样过载。
+
+### 16.2 改法
+
+`bassmax_filter.h` 新增纯函数（放在类外，脱离 DirectShow 就能单测）：
+
+```cpp
+static const float kBassMaxMultiChDriveCap = 0.60f;
+
+inline float BassMaxEffectiveDrive(float drive, int channels) {
+    if (channels > 2 && drive > kBassMaxMultiChDriveCap) return kBassMaxMultiChDriveCap;
+    return drive;
+}
+```
+
+`bassmax_filter.cpp` 两处：
+
+- `ApplySettings()`：`m_params.drive = BassMaxEffectiveDrive(s.drive, m_ch);`
+- `SetMediaType(INPUT)` 末尾：`ApplyToAllCores()` → `ApplySettings()`。
+  原来那里只重算系数、不重读设置，`m_ch` 更新后驱动上限不会跟着变——这是必须一起改的点。
+
+三条设计约束：
+
+| 约束 | 原因 |
+|---|---|
+| 只压不抬 | 用户本来就设得比 60% 低（如 35%），不该被抬到 60% |
+| 不写注册表 | 换成 2.0 输入要能立刻恢复用户原本的驱动；写回就把用户的设置改坏了 |
+| 参数本身不动 | `Bass` / `Treble` / `Preset` 一律不变，用户要求「其他不变」 |
+
+### 16.3 验证
+
+纯函数单测 10/10 通过（临时探针，未入库）：
+
+| 输入 | 输出 |
+|---|---|
+| 1 声道 / 2 声道，drive=1.00 | 1.00（不干预） |
+| 4 / 6 / 8 声道，drive=1.00 | 0.60 |
+| 8 声道，drive=0.35 | 0.35（只压不抬） |
+| 6 声道，drive=0.60 / 0.61 | 0.60 / 0.60（边界） |
+| 8 声道，drive=0.00 | 0.00（旁路态不被抬起来） |
+
+界面：`IDC_HINT4` 文案改成「多声道自动限驱动到 60%; 仍建议用 LAV 混缩为立体声」，
+用户截图确认四行说明完整、末行未被右边界裁切。
+
+### 16.4 版本与部署
+
+- `version.h` → `1.0.3`；`.ax` 183,808 B，`FileVersion 1.0.3.0`，SHA256 前 16 位 `7ad9d5fd80df44f7`。
+- 三处一致：源码产物 / `~\MyMPC\Codecs\` / `D:\MyMPC_CG_x86_x64\3.Core\1.Core\`。
+- 载入验证：`LoadLibraryEx` 成功，5 个导出齐全，`VERSIONINFO` 资源存在。
+- 归档：`_release/BassMax_1.0.3_2026-11-03/` + 同名 zip + `SHA256SUMS.txt`（zip 与 `.ax` 的
+  SHA256 都在这个清单里，不写回文档以免自我指涉），另存界面截图 `_release/dialog-1.0.3.png`；
+  git 标签 `v1.0.3`。
+- 1.0.2 归档删除（tag `v1.0.2` 可复现）。
+
+**这是 1.0.x 里唯一一次改动 DSP 生效参数**（前两次 1.0.1 / 1.0.2 只动设置层与资源），
+2.0 输入下的输出与 1.0.2 逐位相同。
