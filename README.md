@@ -151,6 +151,21 @@ regsvr32 "C:\...\bassmax_dshow\bassmax_dshow.ax"
 2. 用播放器自带解码器时，找对应的「下混 / 混缩到立体声 / Speaker Configuration = 2.0」选项
 3. 这样滤镜收到的就是 2.0，和设计目标一致
 
+> **例外：WAV（PCM）走不到 LAV。** PCM 是未压缩数据，DirectShow 链路里不需要解码器，
+> 播放器会用自己的 PCM 解码器直通到渲染器，**LAV Audio 根本不被创建**，它的 `Mixing` 设置对 WAV 无效。
+> `Formats` 页里的 `pcm` 勾选只影响「LAV 被选为 PCM 解码器」的场合。
+> 多声道 WAV 要下混，只有两条路：
+>
+> - **预先转成 2.0**（最省事，一次搞定）：
+>   ```cmd
+>   ffmpeg -i "5.1.wav" -ac 2 -c:a pcm_s24le "5.1_stereo.wav"
+>   ```
+> - **转成需要解码的格式**（AC3 / DTS / AAC 等）让 LAV 真正接管，此时 `Mixing` 才生效
+>
+> 顺带：`MixingLayout` 的枚举是 Mono(0) / Stereo(1) / 4.0(2) / 5.1(3) / 6.1(4) / 7.1(5)，
+> 设成 Stereo 后注册表 `HKCU\Software\LAV\Audio` 里应当是 `MixingLayout = 1`，
+> 仍然是 `3` 就说明选的还是 5.1。
+
 > 单声道不受此影响：`m_ch == 1` 时它被当作复制成一对（L = R）处理，检测器看到的就是原始信号，
 > 与「双单声道立体声」完全等价。不过目前只用真实立体声素材验证过，单声道尚未实测。
 

@@ -654,3 +654,31 @@ inline float BassMaxEffectiveDrive(float drive, int channels) {
 
 **这是 1.0.x 里唯一一次改动 DSP 生效参数**（前两次 1.0.1 / 1.0.2 只动设置层与资源），
 2.0 输入下的输出与 1.0.2 逐位相同。
+
+### 16.5 文档更正：WAV 走不到 LAV（同日发现）
+
+用户问「LAV 对 WAV 不起作用？Formats 列表里没有 WAV」。两件事分开：
+
+1. **Formats 页是 codec 列表，不是容器列表**，所以永远没有 `wav`。WAV 里的流是
+   `pcm`（Raw PCM Types）或 `mspcm`（MS ADPCM / A-Law），两项默认已勾选。
+2. **真正原因**：PCM 是未压缩数据，DirectShow 链路里不需要解码器，播放器用自己的 PCM
+   解码器直通到渲染器，**LAV Audio 实例根本不会被创建**，`Mixing` 设置对 WAV 无效。
+   `Formats` 里 `pcm` 的勾只影响「LAV 被选为 PCM 解码器」的场合。
+
+所以 15.2 / 16.2 里「用 LAV 混缩成立体声」的建议**对 WAV 不成立**，README 已补例外说明，
+给两条可行路径（`ffmpeg -ac 2` 预转 / 转成需要解码的格式让 LAV 接管）。
+
+顺带确认用户当时的 LAV 设置（`HKCU\Software\LAV\Audio`）：
+
+```
+Mixing = 1           已开
+MixingLayout = 3     3 = 5.1，不是 Stereo
+MixingFlags = 4      削波保护
+```
+
+`MixingLayout` 枚举：Mono(0) / Stereo(1) / 4.0(2) / 5.1(3) / 6.1(4) / 7.1(5)。
+设成 Stereo 后应为 `1`，仍是 `3` 就说明选的还是 5.1 —— 即便 LAV 参与，也只是 7.1 → 5.1，
+到滤镜手上依然多声道。
+
+**代码零改动**，`.ax` 与 1.0.3 首个提交完全相同（183,808 B，SHA256 `7ad9d5fd80df44f7…`），
+只更新 README 与归档。
