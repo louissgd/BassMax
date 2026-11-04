@@ -1,0 +1,8 @@
+# GitHub 语言统计：微软 baseclasses 是第三方代码，不计入本项目
+bassmax_dshow/baseclasses/* linguist-vendored
+
+# 二进制文件
+*.ico binary
+*.png binary
+*.ax  binary
+*.exe binary

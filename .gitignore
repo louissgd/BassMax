@@ -38,3 +38,23 @@ obj/
 
 # 定版归档（含成品与源码副本，体积大，不入库）
 /_release/
+
+# 构建产物与发布包（统一走 GitHub Releases，不进仓库）
+*.ax
+*.zip
+/bassmax_cli/dist/
+
+# 第三方二进制（受版权保护，绝不入库）
+*.dll
+
+# 已废弃模块存档
+*.disabled
+
+# 备份与临时
+*.bak-*
+__pycache__/
+*.pyc
+_publish/
+
+# 仅适用于作者本机（含本机路径），不入库
+/部署新版本.bat
