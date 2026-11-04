@@ -1,45 +1,70 @@
-# BassMax 1.0.3 — 64 位通用音频增强 (Clean-room)
+# BassMax — 64 位音频增强器 (Clean-room)
 
-**版本 1.0.3**（`bassmax_dshow.ax` 的 PE 版本资源同样是 1.0.3.0）· 2026-11-03 · 仅 DirectShow 滤镜
+**版本 1.0.3** · 2026-11 · MIT License
 
-把一个 20 年前的 32 位 Winamp DSP 插件（iZotope 早期的 **OctiMax** 音频增强器）通过「黑盒测量 → 从零重写」的方式，做成可在现代 64 位播放器里运行的通用 DSP。产物命名为 **BassMax**，避免与那个仍在流通的商业老插件重名。
+一个从零重写的三段分频动态增强器。**一份 DSP 核心驱动三种形态**：
 
-**唯一的产物是 `bassmax_dshow.ax`** —— 一个 64 位 DirectShow 音频变换滤镜，供 **MPC-HC / PotPlayer** 等 DirectShow 播放器使用。VST3 分支已放弃并从工程中移除。
+| 形态 | 产物 | 场景 | 速度 |
+|---|---|---|---|
+| DirectShow 滤镜 | `bassmax_dshow.ax` (184 KB) | MPC-HC / PotPlayer 实时播放 | 44.1k 184× |
+| Chrome 扩展 | `bassmax_chrome_v1.0.0.zip` | 浏览器标签页实时处理 | 实时 |
+| 命令行转码器 | `bassmax_cli.exe` (283 KB) | 离线批量 / 管道 | 165–210× |
 
-原始插件受版权保护（企业作品，中国约 50 年 / 美国 95 年），因此本项目**不包含、不反编译、不复制**原插件任何代码；仅通过输入/输出音频的测量结果，独立重写等效算法(效果只是接近)。核心 DSP 见 `bassmax_core.hpp`（唯一权威实现）；离线 A/B 与参数标定用 `render_wav.cpp`（把 WAV 过一遍核心，直接和原插件处理结果做统计比对）。
+三者共用同一份 `bassmax_core.hpp`，DSP 一行没改。Chrome 版逐行移植到 AudioWorklet，与 C++ 参考实现做过逐样本比对（相对差 −97 ~ −101 dB）；CLI 版直接 `#include` 同一个头文件，与 DirectShow 版输出偏差 ≤1 LSB。
 
-> 本文是使用与设计说明；逐次的改动、测量数据与踩坑记录见 [`BACKUP.md`](BACKUP.md)。
+算法来源：对一个 20 年前的 32 位 Winamp DSP 插件（iZotope 早期的 **OctiMax** 音频增强器）做「黑盒测量 → 从零重写」——只用输入/输出音频的测量结果反推行为，独立实现等效链路。产物命名 **BassMax**，与那个商业老插件区分。
+
+原始插件受版权保护（企业作品，中国约 50 年 / 美国 95 年），因此本项目**不包含、不反编译、不复制**原插件的任何代码或二进制。
+
+> 本文是总览与设计说明；逐次改动、测量数据与踩坑记录见 [`BACKUP.md`](BACKUP.md)。
+> 各子项目另有详细文档：[DirectShow](bassmax_dshow/) · [Chrome 扩展](bassmax_chrome_ext/README.md) · [CLI](bassmax_cli/README.md)。
+
 
 ---
 
 ## 一、目录结构
 
 ```
-Claw/
-├── README.md                 # 本文件
+BassMax/
+├── README.md                 # 本文件（总览）
 ├── BACKUP.md                 # 改动记录 / 测量数据 / 踩坑
+├── LICENSE                   # MIT
 ├── bassmax_core.hpp          # ★ DSP 核心 (header-only, 框架无关) 唯一权威实现
-├── render_wav.cpp            # 离线 A/B: 把 WAV 过一遍核心, 与原插件输出做统计比对
+├── render_wav.cpp            # 离线 A/B: 把 WAV 过一遍核心, 与参考输出做统计比对
 ├── pair_io.py / metrics.py / wcut.py   # A/B 素材切分与指标统计
 ├── make_icon.py              # 生成 bassmax.ico / bassmax_off.ico
-├── build_tools.sh            # 编译上面这些命令行工具
+├── build_tools.sh            # 编译上述命令行工具
 │
-└── bassmax_dshow/            # ★ DirectShow 滤镜工程
-    ├── version.h             #   版本号唯一来源 (rc 与代码共用)
-    ├── bassmax_core.hpp      #   (核心副本, 构建时用这份)
-    ├── bassmax_filter.h/.cpp #   CTransformFilter 子类, 格式协商/PCM↔float 转换, ISpecifyPropertyPages
-    ├── bassmax_page.h/.cpp   #   属性页 (CBasePropertyPage)
-    ├── bassmax_tray.h/.cpp   #   托盘图标 + 设置窗口 + 独立设置入口
-    ├── bassmax_settings.h/.cpp # 全局参数 (线程安全 + 注册表持久化 + 热更新代号)
-    ├── bassmax_ui.h          #   属性页/托盘窗口共用的控件读写
-    ├── bassmax.rc / resource.h / bassmax.manifest # 对话框、图标、字符串、v6 清单
-    ├── dllmain.cpp           #   COM 入口 + 类厂 (滤镜 + 属性页两个 CLSID) + 自注册
-    ├── settings_test.cpp     #   注册表读写回归测试 (29 项)
-    ├── baseclasses/          #   Microsoft DirectShow 基础类 (MIT 样例代码)
-    ├── install.bat / uninstall.bat # 管理员一键注册 / 卸载 (带校验)
-    ├── build.sh              #   一键构建
-    └── bassmax_dshow.ax      #   ★ 构建产物 (64 位, 183,808 B)
+├── bassmax_dshow/            # DirectShow 滤镜（Windows）
+│   ├── bassmax_core.hpp      #   核心副本, 构建时用这份
+│   ├── bassmax_filter.h/.cpp #   CTransformFilter 子类, 格式协商/PCM↔float, ISpecifyPropertyPages
+│   ├── bassmax_page.h/.cpp   #   属性页 (CBasePropertyPage)
+│   ├── bassmax_tray.h/.cpp   #   托盘图标 + 设置窗口 + 独立设置入口
+│   ├── bassmax_settings.*    #   全局参数 (线程安全 + 注册表持久化 + 热更新代号)
+│   ├── bassmax_ui.h          #   属性页/托盘窗口共用的控件读写
+│   ├── bassmax.rc / bassmax.manifest   # 对话框、图标、字符串、v6 清单
+│   ├── dllmain.cpp           #   COM 入口 + 类厂 + 自注册
+│   ├── settings_test.cpp     #   注册表读写回归测试 (29 项)
+│   ├── baseclasses/          #   Microsoft DirectShow 基础类 (版权见下)
+│   ├── install.bat / uninstall.bat     # 管理员一键注册 / 卸载
+│   └── build.sh              #   一键构建 → bassmax_dshow.ax
+│
+├── bassmax_chrome_ext/       # Chrome / Edge 扩展 (MV3)
+│   ├── manifest.json
+│   ├── background.js         #   tabCapture → offscreen document
+│   ├── offscreen.js          #   AudioContext + AudioWorklet 装配
+│   ├── worklet/bassmax-worklet.js   # ★ DSP 移植（逐行对应 core.hpp）
+│   ├── popup.html/.css/.js   #   控制面板
+│   └── test/                 #   与 C++ 参考的逐样本比对脚本
+│
+└── bassmax_cli/              # 命令行转码器（Windows）
+    ├── bassmax_cli.cpp       #   WAV / 管道读写, 流式处理
+    ├── bmx.cmd / bmrun.cmd   #   ffmpeg 包装脚本
+    ├── build.sh              #   MSVC /MT 静态链接（无 VC 运行库依赖）
+    └── test/                 #   与 C++ 参考的比对脚本
 ```
+
+> **`baseclasses/` 的版权**：这是 Microsoft DirectShow Base Classes，源自 Windows SDK 样例，文件头保留原始版权声明，**未做修改**。它按 SDK 条款随项目分发，仅用于构建本滤镜；本项目的 MIT 许可不覆盖这部分代码。
 
 ---
 
@@ -100,7 +125,7 @@ bash build.sh          # 需要 baseclasses/ , Windows SDK 10, MSVC 2022
 双击 `install.bat`（会检查管理员权限、regsvr32 返回码，并回读注册表确认真的写进去了）；卸载用 `uninstall.bat`。
 命令行等价：
 ```cmd
-regsvr32 "C:\...\bassmax_dshow\bassmax_dshow.ax"
+regsvr32 "bassmax_dshow.ax"
 ```
 
 注册会写入两组内容，缺任一组播放器都"看不见"：
@@ -230,7 +255,43 @@ rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
 
 ---
 
-## 四、验证结果汇总
+## 四、Chrome / Edge 扩展
+
+实时处理**当前标签页**的音频。用的是 `tabCapture` + 离屏文档 + AudioWorklet，不是内容脚本——所以跨域音源（YouTube、B 站、Spotify Web）不会静音，也不受页面 CSP 影响。
+
+**安装**（未上架应用商店，走开发者模式）：
+
+1. 下载 Release 里的 `bassmax_chrome_v1.0.0.zip` 并解压
+2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`）
+3. 右上角打开「开发者模式」→ 点「加载已解压的扩展程序」→ 选解压出来的目录
+4. 播放音频后点工具栏图标，选「开始处理」
+
+限制：标签页必须正在发声（静音标签抓不到音轨）；关闭扩展或切走标签页即恢复原声。DSP 与 C++ 版逐样本一致（相对差 −97 ~ −101 dB）。
+
+详见 [bassmax_chrome_ext/README.md](bassmax_chrome_ext/README.md)。
+
+---
+
+## 五、命令行转码器
+
+离线批量，单文件 283 KB，`/MT` 静态链接不依赖 VC 运行库。
+
+```bat
+:: WAV 进 WAV 出，输出到 music.bmx.wav
+bassmax_cli.exe music.wav --drive 8.5 --bass 3 --preset 爵士乐
+
+:: 完整媒体文件：视频流原样复制，只重做音轨
+bmx.cmd "D:\MV\old.mkv" --drive 9 --bass 4 --preset rock
+
+:: ffmpeg 管道：需要前级滤镜时放在 BassMax 之前
+ffmpeg -i "输入" -f wav - | bassmax_cli - --drive 10 --bass 2 --treble 2 --preset 爵士乐 -o out.wav
+```
+
+多个 `-af` 处理（降混、重采样）由 ffmpeg 负责，BassMax 只做音效本身。详见 [bassmax_cli/README.md](bassmax_cli/README.md)。
+
+---
+
+## 六、验证结果汇总
 
 | 项目 | 结果 |
 |---|---|
