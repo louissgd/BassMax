@@ -1,0 +1,21 @@
+BassMax — 第三方代码声明
+========================
+
+本仓库的 MIT 许可（见 LICENSE）**不覆盖**以下第三方代码。
+
+
+bassmax_dshow/baseclasses/
+----------------------------
+Microsoft DirectShow Base Classes
+Copyright (c) Microsoft Corporation
+
+源自 Windows SDK 的 DirectShow 样例代码，按 SDK 条款随本项目分发。
+所有文件均保留原始的 Microsoft 版权头，**未做任何修改**，仅用于构建
+bassmax_dshow.ax 滤镜。对这些文件的任何使用请遵守其原始条款。
+
+
+其它
+----
+除上述目录外，本仓库所有的 .hpp / .cpp / .js / .py / .sh 代码，
+均为本项目作者独立编写（clean-room），采用 MIT 许可。
+本项目不包含、不反编译、不复制任何商业音频插件的代码或二进制。

@@ -29,6 +29,8 @@ BassMax/
 ├── README.md                 # 本文件（总览）
 ├── BACKUP.md                 # 改动记录 / 测量数据 / 踩坑
 ├── LICENSE                   # MIT
+├── NOTICE                    # 第三方代码声明（baseclasses 不受 MIT 覆盖）
+├── CONTRIBUTING.md           # 改进指南：改哪里、怎么构建、怎么验证
 ├── bassmax_core.hpp          # ★ DSP 核心 (header-only, 框架无关) 唯一权威实现
 ├── render_wav.cpp            # 离线 A/B: 把 WAV 过一遍核心, 与参考输出做统计比对
 ├── pair_io.py / metrics.py / wcut.py   # A/B 素材切分与指标统计
@@ -302,3 +304,22 @@ ffmpeg -i "输入" -f wav - | bassmax_cli - --drive 10 --bass 2 --treble 2 --pre
 | 版本资源 | `FileVersion` / `ProductVersion` = 1.0.3.0 |
 
 *备注：v1 曾把原插件的「安静段抬升」误判成「电平相关 auto-gain 噪声」，用恒定 makeup 把它抹掉了 —— 现在已按配对测量还原成向上压缩。*
+
+---
+
+## 七、参与改进
+
+MIT 许可，欢迎 Fork 与 Pull Request。**算法效果、多声道处理、跨平台移植**这三类改动最有价值，具体流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+三条底线：`bassmax_core.hpp` 是唯一权威实现（改动需同步 DShow 副本与 JS 移植）、改完要跑逐样本比对、不要提交测试素材和二进制产物。
+
+已知短板（欢迎认领）：
+
+- 多声道（>2）处理质量 —— 现在建议先下混成 2.0
+- `--drive` 0–10 分档的感知一致性
+- 跨平台构建（核心本身与平台无关，缺构建脚本与测试）
+- `test/` 下的脚本还没有 CI
+
+## 八、许可
+
+代码采用 [MIT](LICENSE)。`bassmax_dshow/baseclasses/` 是 Microsoft DirectShow Base Classes，**不受 MIT 覆盖**，详见 [NOTICE](NOTICE)。

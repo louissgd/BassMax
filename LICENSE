@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
---------------------------------------------------------------------------------
-
-Third-party notice:
-
-  bassmax_dshow/baseclasses/
-    Microsoft DirectShow Base Classes, (c) Microsoft Corporation.
-    Distributed unmodified as part of the Windows SDK samples and used only to
-    build the DirectShow filter in this repository. The MIT license above does
-    NOT apply to those files.
