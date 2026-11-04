@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="hd">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="2"  y="13" width="4" height="6"  rx="2"/>
+          <rect x="8"  y="9"  width="4" height="14" rx="2"/>
+          <rect x="14" y="5"  width="4" height="22" rx="2"/>
+          <rect x="20" y="10" width="4" height="12" rx="2"/>
+          <rect x="26" y="14" width="4" height="4"  rx="2"/>
+        </svg>
+        <div class="titles">
+          <div class="name">BASSMAX<span class="ver">v4</span></div>
+          <div class="sub">三段电平拉伸 · 浏览器版</div>
+        </div>
+      </div>
+      <button id="power" class="power" role="switch" aria-checked="false" title="开启 / 关闭">
+        <span class="knob"></span>
+      </button>
+    </header>
+
+    <div id="status" class="status">
+      <span class="dot"></span>
+      <span id="statusText">未接管当前标签页</span>
+      <button id="retarget" class="retarget" hidden>改用当前页</button>
+    </div>
+
+    <section class="meters">
+      <div class="mrow" data-band="lo">
+        <span class="mlabel">LOW</span>
+        <div class="bar"><div class="fill"></div><i class="zero"></i></div>
+        <span class="mval">0.0</span>
+      </div>
+      <div class="mrow" data-band="mid">
+        <span class="mlabel">MID</span>
+        <div class="bar"><div class="fill"></div><i class="zero"></i></div>
+        <span class="mval">0.0</span>
+      </div>
+      <div class="mrow" data-band="hi">
+        <span class="mlabel">HIGH</span>
+        <div class="bar"><div class="fill"></div><i class="zero"></i></div>
+        <span class="mval">0.0</span>
+      </div>
+      <div class="mrow limit" data-band="lim">
+        <span class="mlabel">LIM</span>
+        <div class="bar"><div class="fill"></div></div>
+        <span class="mval">0.0</span>
+      </div>
+      <div class="mlegend"><span>-6</span><span>三段增益 (dB)</span><span>+30</span></div>
+    </section>
+
+    <section class="block">
+      <div class="blabel">风格</div>
+      <div id="presets" class="presets"></div>
+    </section>
+
+    <section class="block">
+      <div class="ctl" data-key="drive">
+        <div class="crow"><span class="clabel">驱动</span><span class="cval" id="v-drive">0.0</span></div>
+        <input type="range" id="drive" min="0" max="10" step="0.5" value="0">
+      </div>
+      <div class="ctl" data-key="bass">
+        <div class="crow"><span class="clabel">低音</span><span class="cval" id="v-bass">0.0 dB</span></div>
+        <input type="range" id="bass" min="-12" max="12" step="0.5" value="0">
+      </div>
+      <div class="ctl" data-key="treble">
+        <div class="crow"><span class="clabel">高音</span><span class="cval" id="v-treble">0.0 dB</span></div>
+        <input type="range" id="treble" min="-12" max="12" step="0.5" value="0">
+      </div>
+    </section>
+
+    <details class="adv">
+      <summary>高级</summary>
+      <div class="advbody">
+        <div class="ctl">
+          <div class="crow"><span class="clabel">总增益</span><span class="cval" id="v-makeup">2.5 dB</span></div>
+          <input type="range" id="makeup" min="0" max="6" step="0.1" value="2.5">
+        </div>
+        <div class="ctl">
+          <div class="crow"><span class="clabel">1kHz 微调</span><span class="cval" id="v-trim1k">0.0 dB</span></div>
+          <input type="range" id="trim1k" min="-6" max="6" step="0.5" value="0">
+        </div>
+        <div class="advfoot">
+          <span class="hint">总增益 = 信号链末端的补偿量, 0 表示用算法默认 2.5 dB</span>
+          <button id="reset" class="reset">重置</button>
+        </div>
+      </div>
+    </details>
+
+    <footer class="ft">
+      <span id="footNote">点击右上角开关接管当前标签页音频</span>
+    </footer>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

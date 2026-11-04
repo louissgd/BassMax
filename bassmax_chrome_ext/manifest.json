@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "BassMax 音频增强",
+  "version": "1.0.0",
+  "description": "把 BassMax v4 的三段电平拉伸算法搬进浏览器: 对当前标签页音频做低音增强 / 动态拉平 / 软限幅。",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabCapture", "offscreen", "storage", "activeTab"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "BassMax 音频增强",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
