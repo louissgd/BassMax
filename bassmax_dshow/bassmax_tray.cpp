@@ -5,6 +5,16 @@
 // 线程除了显示图标, 还按 400ms 轮询注册表:
 //   - TrayIcon 改成 0/1 -> 立刻隐藏/显示图标 (不用重开播放器)
 //   - Bass/Treble/Drive/Preset/Enabled -> 立刻套用 (手改注册表或独立设置程序都算)
+//
+// ---- 线程生命周期 (1.0.4 重做) ----------------------------------------------
+// 旧实现: 每来一个滤镜实例就 CreateThread, 最后一个实例析构时 PostMessage(WM_CLOSE)
+// 然后再 WaitForSingleObject(2000)。两个致命问题:
+//   1) 析构发生在播放器拆图的线程上 (切音轨 = 拆音频支路), 等 2 秒就是画面停 2 秒;
+//      托盘线程若正好卡在 Shell_NotifyIcon 的跨进程调用里, 就是永久卡死。
+//   2) 上一个线程还没退干净, 新实例又开一个 -> 两个线程抢同一套 g_nid / HICON,
+//      互相 NIM_DELETE、DestroyIcon, 图标乱跳甚至崩。
+// 现在: 线程每进程只开一个, 活得和进程一样久 (DllCanUnloadNow 恒为 S_FALSE),
+// 只靠 g_ref 决定"图标该不该显示"。析构只发一条异步消息, 立即返回, 永不阻塞。
 #include "bassmax_tray.h"
 #include "bassmax_ui.h"
 #include "resource.h"
@@ -17,13 +27,14 @@ namespace {
 
 const UINT      kTrayMsg  = WM_APP + 101;
 const UINT      kSyncMsg  = WM_APP + 102;   // 设置窗口改了总开关 -> 刷新托盘图标
+const UINT      kWakeMsg  = WM_APP + 103;   // 有实例加入/离开 -> 立刻重算图标显隐
 const UINT_PTR  kTimerId  = 1;              // 轮询注册表 (图标显隐 + 参数热加载)
 const UINT      kTrayId   = 1;
 const wchar_t*  kWndClass = L"BassMaxTrayWnd";
 
 CRITICAL_SECTION g_cs;
 bool             g_csInit = false;
-int              g_ref    = 0;
+LONG             g_ref    = 0;          // 活着的滤镜实例数 (g_cs 保护)
 HANDLE           g_thread = nullptr;
 HWND             g_trayWnd = nullptr;   // 托盘线程里的隐藏窗口
 HWND             g_dlg     = nullptr;   // 设置窗口 (在托盘线程创建)
@@ -38,6 +49,15 @@ UINT             g_taskbarCreated = 0;
 LONG             g_lastGen   = -1;
 
 void EnsureCs() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
+
+// 当前活着的滤镜实例数 (任何线程可调)
+LONG TrayRef() {
+    EnsureCs();
+    EnterCriticalSection(&g_cs);
+    LONG r = g_ref;
+    LeaveCriticalSection(&g_cs);
+    return r;
+}
 
 HICON LoadAppIcon(int id, int cx, int cy) {
     return (HICON)LoadImageW(g_hInst, MAKEINTRESOURCEW(id), IMAGE_ICON, cx, cy, LR_DEFAULTCOLOR);
@@ -79,6 +99,17 @@ void ApplyTrayIcon() {
     if (h) g_nid.hIcon = h;
     SetTip(on);
     Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+}
+
+// 图标该不该在: 有活实例 + 用户没关 TrayIcon
+void UpdateVisibility() {
+    if (!g_nid.hWnd) return;
+    if (TrayRef() > 0 && bassmax::TrayEnabled()) {
+        if (!g_iconShown) ShowIcon();
+        else              ApplyTrayIcon();   // 已经在了: 只刷开关状态/提示文字
+    } else {
+        HideIcon();
+    }
 }
 
 // 右键: 直接翻转总开关, 参数全部保留
@@ -146,6 +177,9 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     case kSyncMsg:
         ApplyTrayIcon();
         return 0;
+    case kWakeMsg:
+        UpdateVisibility();
+        return 0;
     case WM_TIMER:
         if (w == kTimerId) {
             // 注册表轮询: 手改 Bass/Treble/Drive/Preset/Enabled 或独立设置程序写入
@@ -156,8 +190,8 @@ LRESULT CALLBACK TrayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                 ApplyTrayIcon();
                 if (g_dlg) bassmax::UiLoadFromSettings(g_dlg);
             }
-            // TrayIcon 0/1 实时显隐
-            if (bassmax::TrayEnabled()) ShowIcon(); else HideIcon();
+            // 有实例 + TrayIcon 0/1 -> 实时显隐
+            UpdateVisibility();
         }
         return 0;
     case WM_CLOSE:
@@ -208,8 +242,8 @@ DWORD WINAPI TrayThread(LPVOID) {
     g_nid.uCallbackMessage = kTrayMsg;
     g_nid.hIcon            = g_icoOn;
 
-    // 图标是否出现由注册表 TrayIcon 决定; 线程本身常驻, 这样改成 1 能立刻长出来
-    if (bassmax::TrayEnabled()) ShowIcon();
+    // 图标是否出现由 实例数 + 注册表 TrayIcon 决定; 线程本身常驻进程生命周期
+    UpdateVisibility();
     SetTimer(hwnd, kTimerId, 400, nullptr);
 
     MSG m;
@@ -226,6 +260,12 @@ DWORD WINAPI TrayThread(LPVOID) {
     if (a) DestroyIcon(a);
     if (b && b != a) DestroyIcon(b);
     g_nid = {};
+
+    // 线程真退出了才清全局, 且只清自己的 —— 否则新实例会 PostMessage 到死窗口
+    EnsureCs();
+    EnterCriticalSection(&g_cs);
+    if (g_trayWnd == hwnd) g_trayWnd = nullptr;
+    LeaveCriticalSection(&g_cs);
     return 0;
 }
 
@@ -235,27 +275,35 @@ namespace bassmax {
 
 void StartTray() {
     EnsureCs();
+    HANDLE need = nullptr;
+    HWND   wake = nullptr;
     EnterCriticalSection(&g_cs);
-    if (g_ref++ == 0) {
+    ++g_ref;
+    if (!g_thread) {              // 每进程只开一个线程, 之后永久复用
         DWORD tid = 0;
-        g_thread = CreateThread(nullptr, 0, TrayThread, nullptr, 0, &tid);
+        need = CreateThread(nullptr, 0, TrayThread, nullptr, 0, &tid);
+        if (need) g_thread = need;
+    } else {
+        wake = g_trayWnd;         // 线程已在跑: 叫它重算图标显隐
     }
     LeaveCriticalSection(&g_cs);
+
+    if (!need && wake) PostMessageW(wake, kWakeMsg, 0, 0);
+    // 注意: 新建线程那条路径不需要 post, 线程起来自己会 UpdateVisibility()
 }
 
 void StopTray() {
     EnsureCs();
+    bool idle = false;
+    HWND wake = nullptr;
     EnterCriticalSection(&g_cs);
-    bool last = (g_ref > 0) && (--g_ref == 0);
-    HWND w = g_trayWnd;
-    HANDLE th = g_thread;
-    if (last) { g_trayWnd = nullptr; g_thread = nullptr; }
+    if (g_ref > 0 && --g_ref == 0) idle = true;
+    wake = g_trayWnd;
     LeaveCriticalSection(&g_cs);
 
-    if (last) {
-        if (w) PostMessageW(w, WM_CLOSE, 0, 0);
-        if (th) { WaitForSingleObject(th, 2000); CloseHandle(th); }
-    }
+    // 只发消息, 不等待、不 CloseHandle、不销毁线程。
+    // 析构可能跑在播放器拆图/切音轨的线程上, 任何阻塞都会直接让画面停住。
+    if (idle && wake) PostMessageW(wake, kWakeMsg, 0, 0);
 }
 
 namespace {

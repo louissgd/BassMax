@@ -10,7 +10,7 @@
 |---|---|
 | DSP 版本 | v4（简化拉伸模型）+ 2026-11-03 高采样率修复 |
 | DspVer（注册表） | 1.0.1 已删除（取消参数迁移，见第 14 节） |
-| 编译产物 | `bassmax_dshow/bassmax_dshow.ax`（179,200 字节，2026-11-03 01:28） |
+| 编译产物 | `bassmax_dshow/bassmax_dshow.ax`（187,904 字节，2026-11-05 23:39，1.0.4） |
 | 部署路径 | `C:\Users\Administrator\MyMPC\Codecs\bassmax_dshow.ax` |
 | 基线对照 | 原版 OctIMAX，**驱动 100**（= 驱动滑块满格） |
 
@@ -682,3 +682,77 @@ MixingFlags = 4      削波保护
 
 **代码零改动**，`.ax` 与 1.0.3 首个提交完全相同（183,808 B，SHA256 `7ad9d5fd80df44f7…`），
 只更新 README 与归档。
+
+## 17. 1.0.4（2026-11-05）— 多音轨切换让整条流停摆
+
+### 17.1 现象（用户报告）
+
+多音轨文件在播放中切换音轨，**画面和声音一起停住**；把音效总开关关掉也没用；
+把滤镜从播放器移除 → 切好音轨 → 再把滤镜加回去，这个文件仍然播不了，
+**必须彻底移除滤镜才能恢复播放**。播放器 MPC-HC / PotPlayer 表现一致，解码器 LAV 全套。
+
+用户第一反应是"是不是有缓存机制"。不是。进程内没有任何跨文件的格式缓存，
+`DllCanUnloadNow` 恒 `S_FALSE` 只是钉住 DLL 不被卸载，与格式协商无关。
+
+### 17.2 根因：基类选错（`CTransformFilter` → `CTransInPlaceFilter`）
+
+1.0.3 及之前用 `CTransformFilter`（拷贝式变换）：输入/输出各有一套媒体类型，
+**输出类型只能由 `GetMediaType` 静态生成**。当输出引脚已连接、输入引脚又被塞进一个新
+格式时，基类会拿新输入类型去比对**已经过期的输出类型**：
+
+```
+CheckTransform(新输入类型, m_pOutput->CurrentMediaType())   // baseclasses/transfrm.cpp
+```
+
+旧的 `CheckTransform` 要求 isFloat / 位深 / 声道 / 采样率**全部相等**。LAV 切音轨后
+只要其中任意一项变了（LAV Audio Decoder 常见：5.1→2.0、32f→16i、48k→44.1k），
+这条精确比对必然失败 → `QueryAccept` 返回 `S_FALSE` → 动态切换失败。
+
+万一硬连上了更糟：**输入已换成新格式、输出引脚还停在旧格式**，下游渲染器按旧块长
+收新数据，整条音频链错位，播放器判定音频流坏死并把整个图停掉 —— 所以画面也一起停。
+
+三个现象全部对上：
+
+| 现象 | 实际原因 |
+|---|---|
+| 关音效也没用 | `Enabled=0` 只把 DSP 参数归零，滤镜仍在图里参与格式协商 |
+| 移除滤镜 → 切好音轨 → 再加回，仍播不了 | 该文件当前音轨的格式和滤镜协商结果对不上，同一位置再次失败 |
+| 必须把插件彻底移除才能播 | 换了一条不含本滤镜的链路 |
+
+### 17.3 改法
+
+1. **基类换成 `CTransInPlaceFilter`**（就地变换，本来就是它该干的活）。它把输入引脚的
+   `CheckMediaType` 直接转发下游 `QueryAccept`，`CompleteConnect` 发现输入/输出类型
+   不一致会自动 `ReconnectPin` 把新类型推下去。顺手删掉 `GetMediaType` /
+   `CheckTransform` / `DecideBufferSize` 三个易错点，也不再需要输出分配器与样本拷贝。
+2. **宽进透传**：任何 `MEDIATYPE_Audio` + `FORMAT_WaveFormatEx` 都接受；改不动的格式
+   （AC3/DTS passthrough、>8 声道、怪位深）原样放过，`Transform` 恒返回 `S_OK`。
+   音效滤镜不该成为图建不起来的原因。
+3. 运行中格式变更有**两条入口**都处理：`SetMediaType(PINDIR_INPUT)`，以及采样自带的
+   `AM_MEDIA_TYPE`（`IMediaSample::GetMediaType`）。
+4. `nBlockAlign` 不再一刀切拒绝，24-in-32 这类容器填充按 `nBlockAlign / ch` 走。
+5. 顺带拆掉 `bassmax_tray.cpp` 的定时炸弹：析构里的 `WaitForSingleObject(2000)` 删除
+   （它跑在播放器拆图线程上，等 2 秒 = 画面卡 2 秒）；托盘线程改为每进程一个、
+   活到进程结束，不再出现新旧线程抢 `g_nid` / `HICON`。
+
+### 17.4 验证
+
+新增 `bassmax_dshow/test/test_host.cpp`（LoadLibrary + `DllGetClassObject` 直接建图，
+不依赖注册表）：WAV → BassMax → Null Renderer，2ch / 6ch 交替跑 5 轮。
+
+| 检查项 | 1.0.3 | 1.0.4 |
+|---|---|---|
+| `QueryAccept(6ch/48k/float)` 运行中切换 | `S_FALSE` (1) | `S_OK` (0) |
+| 滤镜拆除耗时（图释放） | 约 2000 ms | 0 ms |
+| 整图跑通 | — | 5/5 轮 `PASS` |
+
+用户实测：MPC-HC / PotPlayer + LAV 全套，MKV 多音轨来回切换正常，不再停流。
+
+### 17.5 版本与部署
+
+- `version.h` → `1.0.4`；`.ax` **187,904 B**，`FileVersion 1.0.4.0`，
+  SHA256 前 16 位 `0dbcea5d8b8e8eab`。
+- 归档：`_publish/bassmax_dshow.ax` 同步为 1.0.4；git 标签 `v1.0.4`，GitHub Release
+  `BassMax 1.0.4` 附带三个产物。
+- `bassmax_core.hpp` **一行未改**，DSP 输出与 1.0.3 逐位相同；本次只动滤镜内核与托盘线程。
+

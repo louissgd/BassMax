@@ -1,12 +1,12 @@
 # BassMax — 64 位音频增强器 (Clean-room)
 
-**版本 1.0.3** · 2026-11 · MIT License
+**版本 1.0.4** · 2026-11 · MIT License
 
 一个从零重写的三段分频动态增强器。**一份 DSP 核心驱动三种形态**：
 
 | 形态 | 产物 | 场景 | 速度 |
 |---|---|---|---|
-| DirectShow 滤镜 | `bassmax_dshow.ax` (184 KB) | MPC-HC / PotPlayer 实时播放 | 44.1k 184× |
+| DirectShow 滤镜 | `bassmax_dshow.ax` (188 KB) | MPC-HC / PotPlayer 实时播放 | 44.1k 184× |
 | Chrome 扩展 | `bassmax_chrome_v1.0.0.zip` | 浏览器标签页实时处理 | 实时 |
 | 命令行转码器 | `bassmax_cli.exe` (283 KB) | 离线批量 / 管道 | 165–210× |
 
@@ -152,6 +152,23 @@ regsvr32 "bassmax_dshow.ax"
 - 采样率：8 kHz ~ 1.536 MHz（覆盖 DSD256 的 1.4112 MHz；DSD512 的 2.8224 MHz 仍拒绝）
 
 > 之前"播放器偶尔卡住、然后自动把滤镜卸掉"的根因：位深按**有效位深**而不是**容器位深**算步长（24-in-32 会算错 → 帧长偏移 → 越界写 → 崩溃/挂死），并且输出缓冲没有上限检查。v2 里所有读写都按 `GetSize()` 钳位，指针/长度全程校验。
+
+### 多音轨切换（1.0.4 修复：切音轨导致整条流停掉）
+
+**症状**：多音轨文件在播放中切音轨，画面和声音一起停住；即使把音效关掉也不行；把滤镜从播放器移除后切好音轨再加回来，这个文件仍然播不了，必须彻底移除滤镜才能恢复。
+
+**根因不是缓存，是基类选错了。** 1.0.3 及之前用 `CTransformFilter`（拷贝式变换），它的输出类型只能由 `GetMediaType` 静态生成。当输出引脚已经连接、而输入引脚被塞进一个新格式时，基类会拿新输入类型去比对**已经过期的输出类型**，并且要求 isFloat / 位深 / 声道 / 采样率完全相等。LAV 切音轨后只要这几项中任意一项变了，比对必然失败 → `QueryAccept` 返回 `S_FALSE` → 动态切换失败；万一硬连上则更糟：输入已换新格式、输出还停在旧格式，下游按旧块长收新数据，整条音频链错位，播放器判定音频流坏死并把整个图停掉（所以画面也停）。
+
+`Enabled=0` 只是把 DSP 参数归零，滤镜仍然留在图里参与格式协商，因此关音效没有用。
+
+**1.0.4 的改法**：
+
+- 基类换成 `CTransInPlaceFilter`（就地变换，本来就是它该干的活）。它把输入引脚的 `CheckMediaType` 直接转发给下游 `QueryAccept`，`CompleteConnect` 发现上下游类型不一致会自动 `ReconnectPin` 把新类型推下去。同时删掉了 `GetMediaType` / `CheckTransform` / `DecideBufferSize` 三个易错点，也不再需要输出分配器和样本拷贝。
+- 宽进透传：任何 `MEDIATYPE_Audio` + `FORMAT_WaveFormatEx` 都接受；改不动的格式（AC3/DTS passthrough、>8 声道、怪位深）原样放过，`Transform` 恒返回 `S_OK`。**音效滤镜不该成为图建不起来的原因。**
+- 运行中格式变更两条入口都处理：`SetMediaType(PINDIR_INPUT)` 与采样自带的 `AM_MEDIA_TYPE`（`IMediaSample::GetMediaType`）。
+- 顺带修掉托盘线程的定时炸弹：析构里的 `WaitForSingleObject(2000)` 已删（它跑在播放器拆图线程上，等 2 秒就是画面卡 2 秒）；托盘线程改为每进程一个、活到进程结束。
+
+实测：MPC-HC / PotPlayer + LAV 全套，MKV 多音轨来回切换正常，不再停流。
 
 ### 多声道素材（5.1 / 7.1）：驱动自动限到 60%，但仍建议混缩成 2.0
 
@@ -301,7 +318,7 @@ ffmpeg -i "输入" -f wav - | bassmax_cli - --drive 10 --bass 2 --treble 2 --pre
 | DirectShow `.ax` 构建 | ✅ x64，导出 5 个符号（4 个 COM 入口 + `BassMaxConfig`），加载/实例化/自注册全部通过 |
 | 吞吐（单核，立体声 float） | 44.1k 184×、96k 83.5×、352.8k 20.4×、705.6k 10.5×、1.4112M 5.3× |
 | 设置层回归 | `settings_test` 29/29（含 DWORD 写法、缺值不采纳、超范围钳位、旧配置不被改写、全新安装落默认值） |
-| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.3.0 |
+| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.4.0 |
 
 *备注：v1 曾把原插件的「安静段抬升」误判成「电平相关 auto-gain 噪声」，用恒定 makeup 把它抹掉了 —— 现在已按配对测量还原成向上压缩。*
 

@@ -1,8 +1,28 @@
 // bassmax_filter.h  —  BassMax 64-bit DirectShow 音频变换滤镜
 //
 // 包装 bassmax::Core DSP 核心 (bassmax_core.hpp)。
-// 输入格式: 8/16/24/32-bit 整数 PCM 与 32-bit IEEE float, 1~8 声道, 任意常用采样率。
-// 输出格式与输入完全一致 (透传式变换, 不重采样), 声道按对处理 (5.1/7.1 也支持)。
+// 输入格式: 8/16/24/32-bit 整数 PCM 与 32/64-bit IEEE float, 1~8 声道, 任意常用采样率。
+// 输出格式与输入完全一致 (就地变换, 不重采样、不复制), 声道按对处理 (5.1/7.1 也支持)。
+//
+// ---- 为什么是 CTransInPlaceFilter 而不是 CTransformFilter (1.0.4) --------------
+// 1.0.3 及之前用 CTransformFilter: 输入/输出各一套媒体类型, 输出类型只能由
+// GetMediaType 静态生成, 而 CTransformInputPin::CheckMediaType 会拿"新输入类型"
+// 去和"已连接但已经过期的输出类型"做 CheckTransform 精确比对。
+// LAV 切音轨时 (LAV Splitter -> LAV Audio Decoder 输出 PCM) 会先 QueryAccept 新
+// 格式: 声道数/位深/采样率只要和当前那条不同, 精确比对就必然失败 -> 返回 S_FALSE,
+// 解码器于是放弃动态切换; 更糟的是万一它硬连成功, 我们的输出引脚仍停留在旧格式,
+// 下游渲染器按旧块长收新数据 -> 整条音频链路错位, 播放器判定音频流坏掉 -> 画面
+// 一起停住。这就是"多音轨文件切音轨必死, 关了音效也没用"的根因 —— 关音效只是把
+// 参数归零, 滤镜本身仍然卡在链路里做格式协商。
+//
+// CTransInPlaceFilter 天生为"输入=输出、原地改样本"的场合设计:
+//   * 输入引脚 CheckMediaType 直接转发下游 QueryAccept -> 下游能接就接, 不再由
+//     我们自己拍脑袋拒绝, 切音轨时 LAV 走的就是这条路;
+//   * CompleteConnect 发现输入类型和输出类型不一致时, 会自动 ReconnectPin 把新
+//     类型推给下游, 不会留下"上旧下新"的半截状态;
+//   * 不需要 GetMediaType / CheckTransform / DecideBufferSize, 少两个可出错的地方。
+// 另外: 无法处理的格式 (DTS/AC3 passthrough、>8 声道等) 一律原样透传, 绝不返回
+// 失败 —— 一个音效滤镜再怎么样都不该把播放器的图搞崩。
 #pragma once
 #include <streams.h>
 #include <vector>
@@ -39,26 +59,35 @@ static const GUID KSDATAFORMAT_SUBTYPE_IEEE_FLOAT_GUID = {
     0x00000003, 0x0000, 0x0010, {0x80,0x00,0x00,0xaa,0x00,0x38,0x9b,0x71}
 };
 
-class BassMaxFilter : public CTransformFilter, public ISpecifyPropertyPages {
+// 解析后的音频格式 (只描述"能不能处理", 不能处理时 m_processable=false 走透传)
+struct BassMaxFmt {
+    bool  isFloat = false;
+    int   bytes   = 2;      // 容器位深 / 8 (每声道每样本字节数)
+    int   ch      = 2;
+    DWORD sr      = 44100;
+    bool  ok      = false;  // true = 我们改得动这路音频
+};
+
+// 从媒体类型解析格式 (纯函数, 便于单测)
+BassMaxFmt BassMaxParseFmt(const CMediaType* mt);
+
+class BassMaxFilter : public CTransInPlaceFilter, public ISpecifyPropertyPages {
 public:
     BassMaxFilter(LPUNKNOWN pUnk, HRESULT* phr);
     virtual ~BassMaxFilter();
 
     static CUnknown* WINAPI CreateInstance(LPUNKNOWN pUnk, HRESULT* phr);
 
-    // 多重继承需要显式提供 IUnknown 实现 (同时满足 CTransformFilter 与 ISpecifyPropertyPages)
+    // 多重继承需要显式提供 IUnknown 实现 (同时满足 CTransInPlaceFilter 与 ISpecifyPropertyPages)
     DECLARE_IUNKNOWN;
 
     // ---- 暴露 ISpecifyPropertyPages, 让播放器能打开"属性"对话框 ----
     STDMETHODIMP NonDelegatingQueryInterface(REFIID riid, void** ppv) override;
     STDMETHODIMP GetPages(CAUUID* pPages) override;
 
-    // ---- CTransformFilter 必须实现的虚函数 ----
+    // ---- 必须实现 ----
     HRESULT CheckInputType(const CMediaType* mtIn) override;
-    HRESULT CheckTransform(const CMediaType* mtIn, const CMediaType* mtOut) override;
-    HRESULT DecideBufferSize(IMemAllocator* pAllocator, ALLOCATOR_PROPERTIES* pProp) override;
-    HRESULT GetMediaType(int iPosition, CMediaType* pMediaType) override;
-    HRESULT Transform(IMediaSample* pIn, IMediaSample* pOut) override;
+    HRESULT Transform(IMediaSample* pSample) override;
     HRESULT SetMediaType(PIN_DIRECTION dir, const CMediaType* pmt) override;
 
     // ---- 参数 (全局共享, 见 bassmax_settings) ----
@@ -71,16 +100,23 @@ public:
 
 private:
     void ApplyToAllCores();
+    // 应用新格式: 重建每个声道对的 Core, 返回是否可处理
+    bool SetFormatFromType(const CMediaType* mt);
+    // 按 m_ch 补齐 Core 数量并 reset
+    void RebuildCores();
+    // 保证 scratch 能装下 frames 帧, 失败返回 false (调用方降级为透传)
+    bool ReserveScratch(size_t frames);
 
     std::vector<bassmax::Core> m_cores;   // 每个声道对一份 (2.0 -> 1, 5.1 -> 3, 7.1 -> 4)
     std::vector<float> m_scratch;         // 单对声道的交错缓冲
     bassmax::Params  m_params;
     volatile LONG m_gen = -1;             // 已应用的设置代号
-    DWORD  m_sr   = 0;                    // 采样率
-    int    m_ch   = 2;                    // 声道数
-    int    m_bytes= 2;                    // 每样本字节数 (容器位深/8)
-    bool   m_float= false;                // 是否 IEEE float
-    CMediaType m_inputMt;                 // 输入连接后的媒体类型 (输出提案据此生成)
-    bool   m_inputSet = false;
-    bool   m_trayOn   = false;
+
+    DWORD m_sr         = 0;               // 采样率
+    int   m_ch         = 0;               // 声道数
+    int   m_bytes      = 2;               // 每样本字节数 (容器位深/8)
+    int   m_frameBytes = 0;               // 一帧字节数 = m_bytes * m_ch
+    bool  m_isFloat    = false;           // 是否 IEEE float
+    bool  m_processable = false;          // false = 原样透传 (压缩格式 / 声道过多 / 位深怪)
+    bool  m_trayOn     = false;
 };
