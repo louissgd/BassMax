@@ -1,4 +1,17 @@
 // dllmain.cpp  —  BassMax DirectShow 滤镜的 COM 入口、类厂与自注册
+//
+// 1.0.6: 回归单管线 —— 一个 .ax 只注册一个滤镜 + 一个属性页
+//   CLSID_BassMax      CTransInPlaceFilter  "BassMax Audio Enhancer"
+//   CLSID_BassMaxPage  属性页 (参数统一走 HKCU\Software\BassMax)
+//
+// 早期双管线尝试曾额外注册 CLSID_BassMaxXform (CTransformFilter, "…(MPC-BE)"),
+// 想让 MPC-BE 把外部 PCM transform 插进音频链。查 MPC-BE 官方源码后确认:
+// 内置 Audio Switcher 以 MERIT64_HIGHEST 无条件占位, 外部 PCM→PCM 滤镜
+// 根本进不了链路 (被创建后立刻销毁)。MPC-BE 现由独立的 bassmax_decoder.ax
+// (C9B4, 解码器角色) 接管, 见 README「六·补」。所以 C9B3 已停用:
+//   * 不再实例化、不再注册;
+//   * 注册/卸载时主动清除旧版留下的 C9B3 注册表残留, 免得"添加滤镜"列表里
+//     一直挂着一个 CoCreate 不到的幽灵条目。
 #include <windows.h>
 #include <objbase.h>
 #include "bassmax_filter.h"
@@ -23,7 +36,7 @@ OSVERSIONINFO g_osInfo     = {};
 CFactoryTemplate g_Templates[1] = {};   // 空模板数组
 int           g_cTemplates = 0;
 
-// ---------- 类厂 (同一个 DLL 导出滤镜与属性页两个 CLSID) ----------
+// ---------- 类厂 (同一个 DLL 导出滤镜 + 属性页两个 CLSID) ----------
 class CFactory : public IClassFactory {
     LONG   m_cRef  = 1;
     CLSID  m_clsid;
@@ -41,7 +54,7 @@ public:
         HRESULT hr = S_OK;
         CUnknown* p = nullptr;
         if (IsEqualGUID(m_clsid, CLSID_BassMax))          p = BassMaxFilter::CreateInstance(pUnk, &hr);
-        else if (IsEqualGUID(m_clsid, CLSID_BassMaxPage)) p = CBassMaxPage::CreateInstance(pUnk, &hr);
+        else if (IsEqualGUID(m_clsid, CLSID_BassMaxPage))  p = CBassMaxPage::CreateInstance(pUnk, &hr);
         else return CLASS_E_CLASSNOTAVAILABLE;
         if (!p) return hr;
         // CUnknown 初始引用计数为 0: 先 AddRef 到 1, QI 再 +1 (由 *pp 持有),
@@ -60,9 +73,10 @@ static const REGPINTYPES g_mtTypes[] = {
     { &MEDIATYPE_Audio, &MEDIASUBTYPE_PCM },
     { &MEDIATYPE_Audio, &MEDIASUBTYPE_IEEE_FLOAT },
 };
+// baseclasses 里 AMOVIESETUP_PIN 就是 REGFILTERPINS 的 typedef, 两边通用
 static const REGFILTERPINS g_pins[] = {
-    { (LPWSTR)L"In",  FALSE, FALSE, FALSE, FALSE, &CLSID_NULL, nullptr, 2, g_mtTypes },
-    { (LPWSTR)L"Out", FALSE, TRUE,  FALSE, FALSE, &CLSID_NULL, nullptr, 2, g_mtTypes },
+    { (LPWSTR)L"In",  FALSE, FALSE, FALSE, FALSE, &CLSID_NULL, nullptr, 2, (REGPINTYPES*)g_mtTypes },
+    { (LPWSTR)L"Out", FALSE, TRUE,  FALSE, FALSE, &CLSID_NULL, nullptr, 2, (REGPINTYPES*)g_mtTypes },
 };
 // merit 用 MERIT_UNLIKELY: 高于 MERIT_DO_NOT_USE, 这样 MPC-HC / PotPlayer 的
 // "添加滤镜" 列表 (部分实现以 MERIT_DO_NOT_USE+1 为下限) 能枚举到;
@@ -90,6 +104,50 @@ static void CLSIDToStr(const GUID& g, WCHAR* buf) {
     StringFromGUID2(g, buf, 40);
 }
 
+// 写 CLSID 名称 + InprocServer32 (滤镜与属性页都走这套)
+static HRESULT RegisterComServer(const GUID& clsid, LPCWSTR name, LPCWSTR path) {
+    WCHAR s[64]; CLSIDToStr(clsid, s);
+    WCHAR key[320];
+    wsprintfW(key, L"CLSID\\%s", s);
+    HRESULT hr = CreateKeyStr(key, nullptr, name);
+    if (FAILED(hr)) return hr;
+    wsprintfW(key, L"CLSID\\%s\\InprocServer32", s);
+    hr = CreateKeyStr(key, nullptr, path);
+    if (SUCCEEDED(hr)) hr = CreateKeyStr(key, L"ThreadingModel", L"Both");
+    return hr;
+}
+
+// 用 IFilterMapper2 写 Instance / FilterData。
+// 没有这一步, 滤镜虽然存在于注册表, 但 IFilterMapper2 枚举不到,
+// 播放器的"添加滤镜"列表里就永远看不到它。
+static HRESULT RegisterWithMapper(IFilterMapper2* pF, const AMOVIESETUP_FILTER& setup) {
+    REGFILTER2 rf2 = {};
+    rf2.dwVersion  = 1;
+    rf2.dwMerit    = setup.dwMerit;
+    rf2.cPins      = setup.nPins;
+    rf2.rgPins     = setup.lpPin;
+
+    // 主类别: DirectShow Filters (GraphEdit / MPC-HC 外部滤镜列表)
+    HRESULT hr = pF->RegisterFilter(*setup.clsID, setup.strName, nullptr, &CAT_Legacy, nullptr, &rf2);
+    // 附加类别: Audio Effects (部分播放器按此分类列出音频滤镜)
+    pF->RegisterFilter(*setup.clsID, setup.strName, nullptr, &CAT_AudioEffects, nullptr, &rf2);
+    return hr;
+}
+
+// 清理早期双管线尝试遗留的 C9B3 注册 (已停用的 CTransform 版)。
+// 两个类别的 Instance/FilterData 和 CLSID 键都要删干净, 否则播放器列表里会
+// 一直挂着一个 CoCreate 不到的幽灵条目, 用户很容易选错。注册与卸载都会调用,
+// 因此老机器升级时跑一次 install.bat 就能自愈。
+static void PurgeLegacyClsid(IFilterMapper2* pF, const GUID& clsid) {
+    if (pF) {
+        pF->UnregisterFilter(&CAT_Legacy, nullptr, clsid);
+        pF->UnregisterFilter(&CAT_AudioEffects, nullptr, clsid);
+    }
+    WCHAR s[64]; CLSIDToStr(clsid, s);
+    WCHAR key[320]; wsprintfW(key, L"CLSID\\%s", s);
+    RegDeleteTreeW(HKEY_CLASSES_ROOT, key);
+}
+
 STDAPI DllRegisterServer() {
     HRESULT hrCo  = CoInitialize(nullptr);      // regsvr32 自身未初始化 COM
     HRESULT hrRet = S_OK;
@@ -98,53 +156,21 @@ STDAPI DllRegisterServer() {
     DWORD n = GetModuleFileNameW(g_hModule, path, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) hrRet = HRESULT_FROM_WIN32(GetLastError() ? GetLastError() : ERROR_INSUFFICIENT_BUFFER);
 
-    WCHAR clsid[64]; CLSIDToStr(CLSID_BassMax, clsid);
-    WCHAR pclsid[64]; CLSIDToStr(CLSID_BassMaxPage, pclsid);
-    WCHAR key[320];
+    // 1) 滤镜 + 属性页的 CLSID 名称 / InprocServer32
+    if (SUCCEEDED(hrRet)) hrRet = RegisterComServer(CLSID_BassMax,     L"BassMax Audio Enhancer", path);
+    if (SUCCEEDED(hrRet)) hrRet = RegisterComServer(CLSID_BassMaxPage, L"BassMax 音频增强 设置",  path);
 
-    // 1) 滤镜 CLSID 名称 (播放器/GraphEdit 显示名)
-    if (SUCCEEDED(hrRet)) {
-        wsprintfW(key, L"CLSID\\%s", clsid);
-        hrRet = CreateKeyStr(key, nullptr, L"BassMax Audio Enhancer");
-    }
-    // 2) 滤镜 InprocServer32 —— 指向本 .ax 的实际路径
-    if (SUCCEEDED(hrRet)) {
-        wsprintfW(key, L"CLSID\\%s\\InprocServer32", clsid);
-        hrRet = CreateKeyStr(key, nullptr, path);
-        if (SUCCEEDED(hrRet)) hrRet = CreateKeyStr(key, L"ThreadingModel", L"Both");
-    }
-    // 3) 属性页 CLSID (播放器按此创建"属性"页)
-    if (SUCCEEDED(hrRet)) {
-        wsprintfW(key, L"CLSID\\%s", pclsid);
-        hrRet = CreateKeyStr(key, nullptr, L"BassMax 音频增强 设置");
-    }
-    if (SUCCEEDED(hrRet)) {
-        wsprintfW(key, L"CLSID\\%s\\InprocServer32", pclsid);
-        hrRet = CreateKeyStr(key, nullptr, path);
-        if (SUCCEEDED(hrRet)) hrRet = CreateKeyStr(key, L"ThreadingModel", L"Both");
-    }
-    // 3) 关键: 用 IFilterMapper2 写 Instance / FilterData。
-    //    没有这一步, 滤镜虽然存在于注册表, 但 IFilterMapper2 枚举不到,
-    //    MPC-HC / PotPlayer 的"添加滤镜"列表里就永远看不到它。
+    // 2) 映射器注册 (Instance / FilterData) + 清理旧版 C9B3 残留
     if (SUCCEEDED(hrRet)) {
         IFilterMapper2* pF = nullptr;
         HRESULT hr = CoCreateInstance(CLSID_FilterMapper2, nullptr, CLSCTX_INPROC_SERVER,
                                       IID_IFilterMapper2, (void**)&pF);
         if (FAILED(hr)) {
             hrRet = hr;
+            PurgeLegacyClsid(nullptr, CLSID_BassMaxXform);
         } else {
-            REGFILTER2 rf2 = {};
-            rf2.dwVersion = 1;
-            rf2.dwMerit   = g_setup.dwMerit;
-            rf2.cPins     = g_setup.nPins;
-            rf2.rgPins    = g_setup.lpPin;
-
-            // 主类别: DirectShow Filters (GraphEdit / MPC-HC 外部滤镜列表)
-            hrRet = pF->RegisterFilter(CLSID_BassMax, g_setup.strName, nullptr,
-                                       &CAT_Legacy, nullptr, &rf2);
-            // 附加类别: Audio Effects (部分播放器按此分类列出音频滤镜)
-            pF->RegisterFilter(CLSID_BassMax, g_setup.strName, nullptr,
-                               &CAT_AudioEffects, nullptr, &rf2);
+            hrRet = RegisterWithMapper(pF, g_setup);
+            PurgeLegacyClsid(pF, CLSID_BassMaxXform);
             pF->Release();
         }
     }
@@ -155,29 +181,31 @@ STDAPI DllRegisterServer() {
 
 STDAPI DllUnregisterServer() {
     HRESULT hrCo = CoInitialize(nullptr);
-    WCHAR clsid[64];  CLSIDToStr(CLSID_BassMax, clsid);
-    WCHAR pclsid[64]; CLSIDToStr(CLSID_BassMaxPage, pclsid);
-    WCHAR key[320];
 
     IFilterMapper2* pF = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_FilterMapper2, nullptr, CLSCTX_INPROC_SERVER,
                                    IID_IFilterMapper2, (void**)&pF))) {
         pF->UnregisterFilter(&CAT_Legacy, nullptr, CLSID_BassMax);
         pF->UnregisterFilter(&CAT_AudioEffects, nullptr, CLSID_BassMax);
-        pF->Release();
     }
+    PurgeLegacyClsid(pF, CLSID_BassMaxXform);
+    if (pF) pF->Release();
+
     // 连同 Instance / Category / InprocServer32 一并清除
-    wsprintfW(key, L"CLSID\\%s", clsid);
-    RegDeleteTreeW(HKEY_CLASSES_ROOT, key);
-    wsprintfW(key, L"CLSID\\%s", pclsid);
-    RegDeleteTreeW(HKEY_CLASSES_ROOT, key);
+    const GUID* all[] = { &CLSID_BassMax, &CLSID_BassMaxPage };
+    for (int i = 0; i < 2; ++i) {
+        WCHAR s[64]; CLSIDToStr(*all[i], s);
+        WCHAR key[320]; wsprintfW(key, L"CLSID\\%s", s);
+        RegDeleteTreeW(HKEY_CLASSES_ROOT, key);
+    }
 
     if (SUCCEEDED(hrCo)) CoUninitialize();
     return S_OK;
 }
 
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
-    if (!IsEqualGUID(rclsid, CLSID_BassMax) && !IsEqualGUID(rclsid, CLSID_BassMaxPage))
+    if (!IsEqualGUID(rclsid, CLSID_BassMax) &&
+        !IsEqualGUID(rclsid, CLSID_BassMaxPage))
         return CLASS_E_CLASSNOTAVAILABLE;
     if (riid != IID_IClassFactory && riid != IID_IUnknown) return E_NOINTERFACE;
     CFactory* f = new CFactory(rclsid);

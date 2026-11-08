@@ -39,7 +39,7 @@ BassMax/
 │
 ├── bassmax_dshow/            # DirectShow 滤镜（Windows）
 │   ├── bassmax_core.hpp      #   核心副本, 构建时用这份
-│   ├── bassmax_filter.h/.cpp #   CTransformFilter 子类, 格式协商/PCM↔float, ISpecifyPropertyPages
+│   ├── bassmax_filter.h/.cpp #   CTransInPlaceFilter 子类, 格式协商/PCM↔float, ISpecifyPropertyPages
 │   ├── bassmax_page.h/.cpp   #   属性页 (CBasePropertyPage)
 │   ├── bassmax_tray.h/.cpp   #   托盘图标 + 设置窗口 + 独立设置入口
 │   ├── bassmax_settings.*    #   全局参数 (线程安全 + 注册表持久化 + 热更新代号)
@@ -50,6 +50,13 @@ BassMax/
 │   ├── baseclasses/          #   Microsoft DirectShow 基础类 (版权见下)
 │   ├── install.bat / uninstall.bat     # 管理员一键注册 / 卸载
 │   └── build.sh              #   一键构建 → bassmax_dshow.ax
+│
+├── bassmax_decoder/          # MPC-BE 专用「解码器角色」壳 (独立 .ax)
+│   ├── bassmax_decoder.cpp   #   代理压缩输入 + 私有 LAV 图 + PCM 出口做 DSP
+│   ├── build.sh              #   复用 ../bassmax_dshow 的 baseclasses / DSP / settings
+│   ├── test/host.cpp         #   x64 真实播放宿主 (普通/seek/切轨三种模式)
+│   ├── install.bat / uninstall.bat
+│   └── (构建产物 bassmax_decoder.ax / reg_helper.exe 不入库, CLSID ...C9B4)
 │
 ├── bassmax_chrome_ext/       # Chrome / Edge 扩展 (MV3)
 │   ├── manifest.json
@@ -114,35 +121,59 @@ v1 是「静态 EQ → 前瞻限幅」，和原插件差在**方向**上：v1 �
 
 ## 三、DirectShow 滤镜 (MPC-HC / PotPlayer)
 
+一个 `.ax` 只注册**一个滤镜 + 一张属性页**（1.0.6 起回归单管线）：
+
+| 显示名 | CLSID | 基类 | 给谁用 |
+|---|---|---|---|
+| BassMax Audio Enhancer | `{C41F7D22-…-C9B1}` | `CTransInPlaceFilter` | PotPlayer / MPC-HC 等支持 in-place 变换的播放器 |
+
+**MPC-BE 用另一个 `.ax`**：`bassmax_decoder.ax`（C9B4，解码器角色），见「六·补」。
+开发过程中（该版本未单独发布）曾在本 `.ax` 里多注册一个 `CTransformFilter` 版（C9B3）试图兼容 MPC-BE，
+查官方源码后确认那条路走不通，1.0.6 已移除；注册时会自动清除它的注册表残留。
+
 ### 构建
 ```bash
 cd bassmax_dshow
 bash build.sh          # 需要 baseclasses/ , Windows SDK 10, MSVC 2022
 # 产物: bassmax_dshow.ax
+
+bash test/build_test.sh   # 64 位测试宿主，必须和 .ax 同位数
+./test/test_host.exe ./bassmax_dshow.ax
 ```
+源码分工：`bassmax_dsp.*`（格式解析 + DSP，两个 `.ax` 共用）、`bassmax_filter.*`（CTIP 版）、
+`bassmax_settings/tray/page`（设置与界面）。`bassmax_xform.*` 是那次双管线尝试的
+遗留源码，已标注停用且不再编入 `build.sh`，保留仅供追溯。
+
 要点：编译带 `/utf-8`（源码含中文注释）；链接用 `/LD` 并 `LINK /EXPORT:...` 显式导出四个 COM 入口；
 仅排除 baseclasses 的 `dllentry.cpp`（其 DllMain/类厂由我们自己的 `dllmain.cpp` 提供）。
 
 ### 注册（需管理员）
-双击 `install.bat`（会检查管理员权限、regsvr32 返回码，并回读注册表确认真的写进去了）；卸载用 `uninstall.bat`。
+双击 `install.bat`（会检查管理员权限、注册返回码，并回读注册表确认真的写进去了）；卸载用 `uninstall.bat`。
 命令行等价：
 ```cmd
 regsvr32 "bassmax_dshow.ax"
 ```
+> 若环境把 `regsvr32` / `rundll32` 列入 LOLBin 黑名单（直接被安全策略拦掉），用仓库自带的等价工具：
+> `bash bassmax_dshow/tools/build_reg.sh` 编出 `reg_helper.exe`，然后
+> `reg_helper.exe <path>\bassmax_dshow.ax`（反注册加 `/u`，`/enum` 可列出映射器里能看到哪些滤波器）。
 
-注册会写入两组内容，缺任一组播放器都"看不见"：
+注册为**这一个滤镜**写入两组内容，缺任一组播放器都"看不见"：
 
 | 位置 | 作用 |
 |---|---|
-| `HKCR\CLSID\{C41F7D22-...}`（默认值=显示名）+ `\InprocServer32`（= .ax 绝对路径，ThreadingModel=Both） | COM 能按 CLSID 创建这个滤镜 |
-| `HKCR\CLSID\{083863F1-70DE-11D0-BD40-00A0C911CE86}\Instance\{C41F7D22-...}`，含 `FriendlyName`、`CLSID`、`FilterData`（REGFILTER2 v2，merit=`MERIT_UNLIKELY`，2 个引脚 × {PCM, IEEE_FLOAT}） | **滤镜映射器**能枚举到它 —— MPC-HC/PotPlayer 的"添加滤镜"列表就是走 `IFilterMapper2::EnumMatchingFilters` 枚举的 |
+| `HKCR\CLSID\{C41F7D22-…-C9B1}`（默认值=显示名）+ `\InprocServer32`（= .ax 绝对路径，ThreadingModel=Both） | COM 能按 CLSID 创建滤镜 |
+| `HKCR\CLSID\{083863F1-70DE-11D0-BD40-00A0C911CE86}\Instance\<CLSID>`，含 `FriendlyName`、`CLSID`、`FilterData`（REGFILTER2 v1，merit=`MERIT_UNLIKELY`，2 个引脚 × {PCM, IEEE_FLOAT}） | **滤镜映射器**能枚举到它 —— 各播放器的"添加滤镜"列表就是走 `IFilterMapper2::EnumMatchingFilters` |
 
-> 早期版本只写了第一组，所以 `regsvr32` 显示成功、注册表也有键，但播放器列表里永远找不到。现在两组都由 `DllRegisterServer` 写入（`IFilterMapper2::RegisterFilter`），且失败时返回真实 HRESULT，`regsvr32` 会报错而不是假成功。
+> 早期版本只写了第一组，所以 `regsvr32` 显示成功、注册表也有键，但播放器列表里永远找不到。现在两组都由 `DllRegisterServer` 写入（`IFilterMapper2::RegisterFilter`），且失败时返回真实 HRESULT，不会假成功。
 > merit 取 `MERIT_UNLIKELY`(0x00400000)：高于部分播放器列表用的 `MERIT_DO_NOT_USE+1` 门槛，又低到不会被自动构链插入（必须手动添加）。
+> `DllRegisterServer` 与 `DllUnregisterServer` 都会清除早期双管线尝试遗留的 `C9B3` 条目（CLSID + 两个类别的 `Instance`/`FilterData`），所以从旧版升级时跑一次 `install.bat` 就能自愈，不会留下幽灵滤镜。
 
 ### 在播放器中使用
 - **MPC-HC**：`选项 → 外部滤镜 → 添加滤镜 → 选择 “BassMax Audio Enhancer”`，并勾选“优先/强制”。或 `播放 → 滤镜` 里查看已加载。
 - **PotPlayer**：`F5 首选项 → 滤镜 → 音频滤镜 → 添加系统滤镜 → BassMax Audio Enhancer`，勾选启用。
+- **MPC-BE**：**不要用本滤镜**。MPC-BE 内置 `Audio Switcher` 会挡住所有 PCM→PCM 外部滤镜，
+  这里无论选哪一条都是「列表里有、右键滤镜里没有、没效果」。请改用 `bassmax_decoder.ax`，
+  配置与判据见「六·补」。
 
 滤镜会做**透传式变换**：输出格式与输入完全一致（不重采样）。支持 LAV Audio Decoder 的全部输出格式：
 
@@ -169,6 +200,49 @@ regsvr32 "bassmax_dshow.ax"
 - 顺带修掉托盘线程的定时炸弹：析构里的 `WaitForSingleObject(2000)` 已删（它跑在播放器拆图线程上，等 2 秒就是画面卡 2 秒）；托盘线程改为每进程一个、活到进程结束。
 
 实测：MPC-HC / PotPlayer + LAV 全套，MKV 多音轨来回切换正常，不再停流。
+
+### MPC-BE 为什么不认 PCM 外部滤镜（1.0.6 起移除 C9B3）
+
+**症状**：MPC-BE 的「外部滤镜」里能看到并添加了 BassMax，播放时「右键 → 滤镜」里却没有它，音效完全没有；
+但进程模块里确实加载了 `bassmax_dshow.ax`（被创建，然后被丢弃）。
+
+**根因（查 MPC-BE 官方源码确认）**：`CFGManagerPlayer` 会无条件把内置 `Audio Switcher` 以
+`MERIT64_HIGHEST`（1<<58）插入音频链，外部滤镜上限只有 `MERIT64_EXT_FILTERS_PREFER`（≈1<<48）；
+且上游连接协商在第三方 transform 的 `ReceiveConnection` 之前就失败。所以 **PCM→PCM 形态的外部 DSP
+在 MPC-BE 里根本进不了链路**，与用 `CTransformFilter` 还是 `CTransInPlaceFilter`、注册多少媒体类型、
+merit 调多高都无关。官方设置里也没有禁用 Audio Switcher / 外部 DSP / Winamp 插件的入口
+（`SetAudioFilter1` 只接受 `compand`，裁剪版 libavfilter 只注册 `aresample / atempo / compand`）。
+
+**双管线尝试已被推翻（该版本未单独发布）**：当时新增 `bassmax_xform.*`（C9B3，`CTransformFilter`），并把
+1.0.3 的三个缺陷逐个堵掉（`GetMediaType` 返回当前输入类型、`CheckTransform` 不做精确比对、
+`DecideBufferSize` 按输入格式算块长）。但诊断日志证明它在 MPC-BE 里的生命周期始终是
+`CREATE → QI → JoinFilterGraph → GetMediaType → DESTROY`，`CheckInputType` 一次都没被调用；
+把媒体类型扩到 224 种组合、merit 提到 `0x800010` 也无效。1.0.6 起这条管线从构建、类厂、
+注册中全部移除，源码保留在 `bassmax_xform.*` 供追溯，不再编译。
+
+**MPC-BE 的正解**：外部滤镜可以顶替「解码器」角色（实测 `LAV Audio Decoder` 就是这样替换
+`MPC Audio Decoder` 的）。独立的 `bassmax_decoder.ax` 内部驱动 LAV 解码、对输出 PCM 做 DSP，
+见「六·补」。
+
+**沿用下来的修复：`wBitsPerSample = 0`**
+
+解析格式时原来直接读 `wBitsPerSample`，而 WAV Parser（以及部分分离器/解码器）给出的 `WAVEFORMATEX`
+只填了 `nBlockAlign` 和 `nAvgBytesPerSec`，位深是 0。旧代码于是判定"不支持这个格式" → 整条链路透传，
+滤镜在链路上、参数字段也在，就是**一个样本都不处理**。改为用 `nBlockAlign / nChannels` 反推每样本
+字节数，两者不一致时以 `nBlockAlign` 为准（24-in-32 这类容器填充只有它能说清）。这段逻辑在
+`bassmax_dsp.cpp`，`bassmax_dshow.ax` 与 `bassmax_decoder.ax` 共用。
+
+**回归**（`test/test_host.exe`，x64，单 CLSID C9B1，5 轮 2ch/6ch 交替）：
+
+| 用例 | 结果 |
+|---|---|
+| 图接通（WAV Parser → 滤镜 → Null Renderer） | 5/5 通过 |
+| 运行中 `QueryAccept(6ch/48k/float32)` | 5/5 `S_OK` |
+| 2 秒音频完整推流（要求 `EC_COMPLETE` 且无 `EC_ERRORABORT`） | 5/5 通过 |
+| 拆除耗时 | 5/5 < 1 ms |
+
+> 旧版测试宿主是 32 位的，加载 64 位 `.ax` 直接 `193 ERROR_BAD_EXE_FORMAT`，等于什么都没验证；
+> 现在 `test/build_test.sh` 强制 x64。
 
 ### 多声道素材（5.1 / 7.1）：驱动自动限到 60%，但仍建议混缩成 2.0
 
@@ -267,9 +341,16 @@ rundll32.exe "C:\Users\<你>\MyMPC\Codecs\bassmax_dshow.ax",BassMaxConfig
    reg query "HKCR\CLSID\{C41F7D22-6B18-4A93-8E52-1D7A4F60C9B1}" /s
    reg query "HKCR\CLSID\{083863F1-70DE-11D0-BD40-00A0C911CE86}\Instance\{C41F7D22-6B18-4A93-8E52-1D7A4F60C9B1}" /s
    ```
-   第二条（`Instance`/`FilterData`）缺失 = 播放器列表就看不到。
+   后一条（`Instance`/`FilterData`）缺失 = 播放器列表就看不到。
+   也可以直接跑 `bassmax_dshow/tools/reg_helper.exe /enum`，它会用播放器同一套
+   `IFilterMapper2` 接口把映射器里能枚举到的 BassMax 条目打出来。正常应只有
+   `BassMax Audio Enhancer`(C9B1) 与 `BassMax Audio Decoder (LAV Wrapper)`(C9B4) 两条；
+   若还看到带 `(MPC-BE)` 后缀的旧条目，说明旧版残留未清，重跑一次 `install.bat` 即可。
 3. `InprocServer32` 必须是**当前实际存在的** .ax 绝对路径；换了文件位置要重新注册。
 4. 用 Regshot 之类做前后对比时，先拍快照再注册 —— 若注册早已存在，对比结果会是"零变化"，容易被误判成注册失败。
+
+**MPC-BE 专属**：不要用本滤镜。请确认 `HKCU\Software\MPC-BE\ExternalFilters` 指向的是
+`C9B4` 解码器壳，判据看 `%TEMP%\bassmax_decoder.log` 里 `changed=` 是否增长，见「六·补」。
 </details>
 
 ---
@@ -315,12 +396,75 @@ ffmpeg -i "输入" -f wav - | bassmax_cli - --drive 10 --bass 2 --treble 2 --pre
 | 项目 | 结果 |
 |---|---|
 | DSP 核心 vs 原插件（真实歌曲配对） | 响度轨迹相关 0.90、峰值因数 3.40 vs 3.37、频段偏差 <1.7dB |
-| DirectShow `.ax` 构建 | ✅ x64，导出 5 个符号（4 个 COM 入口 + `BassMaxConfig`），加载/实例化/自注册全部通过 |
+| DirectShow `.ax` 构建 | ✅ x64，单管线（CTIP 一个滤镜 + 属性页），导出 5 个符号（4 个 COM 入口 + `BassMaxConfig`），加载/实例化/自注册/映射器枚举、5 轮真实推流回归全部通过 |
 | 吞吐（单核，立体声 float） | 44.1k 184×、96k 83.5×、352.8k 20.4×、705.6k 10.5×、1.4112M 5.3× |
 | 设置层回归 | `settings_test` 29/29（含 DWORD 写法、缺值不采纳、超范围钳位、旧配置不被改写、全新安装落默认值） |
-| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.4.0 |
+| 版本资源 | `FileVersion` / `ProductVersion` = 1.0.6.0 |
 
 *备注：v1 曾把原插件的「安静段抬升」误判成「电平相关 auto-gain 噪声」，用恒定 makeup 把它抹掉了 —— 现在已按配对测量还原成向上压缩。*
+
+---
+
+## 六·补、MPC-BE 专用解码器壳（`bassmax_decoder.ax`）
+
+**为什么单独做一个 `.ax`**：MPC-BE 1.9.3 的 `CFGManagerPlayer` 会无条件把内置 `Audio Switcher` 以 `MERIT64_HIGHEST`（1<<58）插入音频链；外部滤镜上限只有 `MERIT64_EXT_FILTERS_PREFER`（≈1<<48），且上游连接协商在第三方 transform 的 `ReceiveConnection` 之前就失败。所以 **PCM→PCM 形态的外部 DSP 在 MPC-BE 里进不了链路**，无论注册多少媒体类型、把 merit 调多高、用 `CTransformFilter` 还是 `CTransInPlaceFilter` 都一样。官方源码里也没有禁用 Audio Switcher、外部 DSP / Winamp 插件入口；`SetAudioFilter1` 只接受 `compand`，裁剪版 libavfilter 只注册了 `aresample / atempo / compand`。
+
+但 MPC-BE 允许外部滤镜顶替**解码器**角色（实测 `LAV Audio Decoder` 就是这样替换 `MPC Audio Decoder` 的）。所以这个独立 `.ax` 伪装成音频解码器：
+
+```
+MPC-BE graph: [Source] --(压缩)--> [BMD.In]   [BMD.Out] --(PCM)--> [Audio Switcher] --> [Renderer]
+                                      |              ^
+                                      | 零拷贝转发    | Deliver
+                                      v              |
+私有 graph:  [Feeder.Out] -> [LAV Audio Decoder] -> [Sink.In]
+```
+
+- 输入引脚接受任意非 PCM 的 `MEDIATYPE_Audio`，把上游 `IMediaSample` 直接交给 LAV 的 `IMemInputPin::Receive`（零拷贝）。
+- 输出引脚用 LAV 解出的真实 PCM 格式协商，先把样本复制到下游 allocator，再做 `BassMaxDsp::Process`。
+- `Run/Pause/Stop`、`Flush`、`EndOfStream`、`NewSegment`、时间戳 / 同步点 / discontinuity / preroll / 动态媒体类型全部双向转发。
+- 私有图重建前先 `Stop`（LAV 有解码线程，Run 状态直接 Disconnect 会失败）；切轨后若 LAV 输出格式变了，在下一个输出 sample 上挂新格式通知下游。
+
+**复用与冲突（已解决）**：
+
+| 复用项 | 冲突 | 处理 |
+|---|---|---|
+| `baseclasses/`、`bassmax_dsp.cpp`、`bassmax_core.hpp` | 静态编进各自 DLL，符号不导出，无 DLL 级冲突 | 直接 `#include` / 一起编译 |
+| `bassmax_settings.cpp` | `s_val/s_gen/s_cs` 是 DLL-local `static`，旧 `.ax` 属性页写入不会让新 `.ax` 的 `SettingsGen()` 变化 | 不在新壳暴露属性页；每 400ms 调 `ReloadFromRegistry()` 主动回读 `HKCU\Software\BassMax` |
+| `CLSID_BassMaxPage` / `ISpecifyPropertyPages` | 属性页注册在旧 `.ax` 的 C9B2，两边都注册会互相覆盖 `InprocServer32`；同名常量还会重复定义 | 新壳完全移除属性页，统一走"设置页 / 托盘 / 注册表"改参数 |
+| CLSID | 与 C9B1/C9B2 同族（C9B3 已停用并清除） | 新分配 `...C9B4` |
+
+**依赖**：系统里必须已注册 `LAV Audio Decoder`（`{E8E73B6B-4CB3-44A4-BE99-4F7BCB96E491}`）。MPC-BE 自带 `LAVFilters64\LAVAudio.ax`，直接可用。
+
+**部署**：`install.bat` 注册 `.ax`，并在 `HKCU\Software\MPC-BE\ExternalFilters` 写入 `SourceType=0 / LoadType=0(PREFERRED) / MT_000=Audio+NULL(通配)` 一条；脚本会复用已有的 C9B4 条目而非硬编号，因此 MPC-BE 退出时重排编号后重跑也不会产生重复项。
+
+> 仓库不含任何二进制（`.ax` / `.exe` 已被 `.gitignore` 排除）：先运行 `bassmax_decoder/build.sh` 编出 `bassmax_decoder.ax`，成品二进制走 GitHub Releases。`install.bat` 优先用同目录的 `reg_helper.exe` 调 `DllRegisterServer`（`regsvr32` 常被安全策略当 LOLBin 拦截），缺失时自动回退 `regsvr32`；要生成它请执行 `bash bassmax_dshow/tools/build_reg.sh` 并把结果放到 `.ax` 同目录。
+
+**回退机制（解码器壳第二版，修复"无法渲染文件"）**：
+
+外部滤镜被配成 `PREFERRED + Audio/NULL 通配` 时，MPC-BE 会把**所有**音频流先塞给本滤镜。早期版本要等 `CompleteConnect` 里私有 LAV 图建失败才报错，这时整张图已经没救了，播放器直接弹"无法渲染文件"且不会回退到内置解码器。现在改成：
+
+- `BmdInPin::CheckMediaType` 先用 `IPin::QueryAccept` 问内部 LAV 输入引脚认不认这个压缩类型；明确的 `S_FALSE` / `VFW_E_TYPE_NOT_ACCEPTED` 当场拒绝，图管理器自然继续尝试下一个候选。其它错误码放行，避免 LAV 未连接时 `QueryAccept` 不可用造成误拒。
+- `BuildPrivateGraph` 里 `ConnectDirect(Feeder->LAV, &mt)` 失败后，先断开半连接，再试一次"不指定类型"的自动协商。
+- `PcmMt` 在 LAV 还没就绪时**不再返回 `VFW_E_NOT_CONNECTED`**（那会让输出引脚 `GetMediaType` 失败、滤镜在枚举阶段被丢弃），而是给一个基于输入推断的合法占位 PCM 类型；等输入连上拿到真实格式后由 `m_mtDirty` 在下一块 sample 上挂动态媒体类型。
+
+已知限制：部分 APE 是 **LAV 自身解不了**（ffmpeg 的 APE 解码器对部分新版/高压缩级 APE 支持不全，foobar2000 用 Monkey's Audio 官方解码器所以能放）。这类文件现在会提前让位给内置解码器，不会再拖崩整张图，但自然也就没有 BassMax 音效；若 DirectShow 侧根本没有能解它的解码器，播放器仍会报无法渲染 —— 那与本滤镜无关。
+
+**总开关校验（避免"只有图标/只有透传"的假阳性）**：
+
+日志现在打印 `DSP 总开关 enabled=... bass=... drive=...`，并新增 `changed=` 统计 —— 每块样本在 `Process()` 之后逐字节比对输入输出前 64 字节，只有数据真的被改动才计数。总开关关闭时 Core 走 bypass，`changed` 恒为 0。看 `changed` 增长才算 DSP 真在工作，光看 `samples/bytes`、滤镜名或托盘图标都不算。
+
+**验证**（x64 真实播放，`test/host.exe` + MPC-BE 1.9.3，`Enabled=1`）：
+
+| 场景 | 结果 |
+|---|---|
+| 普通播放 m4a / seeking 到 50% / 同格式切轨 | `RESULT: PASS`，`Flush → NewSegment → 继续出样本`，无 `EC_ERRORABORT` |
+| 不同格式切轨（m4a AAC → APE） | 私有图 Stop→重建，LAV 输出 float32 → 16bit PCM，DSP 重新 `SetFormat`，下游收到新格式 |
+| MPC-BE + VOB（AC3 5.1） | `QueryAccept=S_OK` → LAV 输出 6ch/48k float32，`STAT-FINAL samples=50 bytes=1.8MB changed=50` |
+| MPC-BE + m4a / 24bit FLAC / 5.1 MKV | `changed` 随样本增长（107/110、28/29、141/142），DSP 确实改了数据 |
+| MPC-BE + LAV 解不了的 APE | `QueryAccept=S_FALSE` → 当场让位，无 `ConnectDirect` 失败，不再拖崩整张图 |
+| 诊断日志 | `%TEMP%\bassmax_decoder.log` 里 `STAT ... changed=N ... enabled=1` —— `changed` 增长且 `enabled=1` 才算生效 |
+
+> 测试宿主的 `--switch` 要用**同格式**文件（裸 `File Source (Async)` 需要图管理器自动插 Splitter）；换成结构不同的容器会得到 `VFW_E_CANNOT_CONNECT`，那是宿主脚本的局限，不是滤镜回归。
 
 ---
 

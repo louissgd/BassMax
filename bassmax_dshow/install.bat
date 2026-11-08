@@ -1,46 +1,49 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 setlocal
 set "AX=%~dp0bassmax_dshow.ax"
-set "CLSID={C41F7D22-6B18-4A93-8E52-1D7A4F60C9B1}"
+set "CLSID_TIP={C41F7D22-6B18-4A93-8E52-1D7A4F60C9B1}"
 
 if not exist "%AX%" (
-    echo [é”™è¯¯] æ‰¾ä¸åˆ° bassmax_dshow.axï¼Œè¯·æŠŠæœ¬è„šæœ¬å’Œ .ax æ”¾åœ¨åŒä¸€ç›®å½•ã€‚
+    echo [´íÎó] ÕÒ²»µ½ bassmax_dshow.ax£¬Çë°Ñ±¾½Å±¾ºÍ .ax ·ÅÔÚÍ¬Ò»Ä¿Â¼¡£
     pause & exit /b 1
 )
 
 net session >nul 2>&1
 if errorlevel 1 (
-    echo [é”™è¯¯] éœ€è¦ç®¡ç†å‘˜æƒé™ã€‚è¯·å³é”®æœ¬æ–‡ä»¶ - ä»¥ç®¡ç†å‘˜èº«ä»½è¿è¡Œã€‚
+    echo [´íÎó] ÐèÒª¹ÜÀíÔ±È¨ÏÞ¡£ÇëÓÒ¼ü±¾ÎÄ¼þ - ÒÔ¹ÜÀíÔ±Éí·ÝÔËÐÐ¡£
     pause & exit /b 1
 )
 
-echo æ­£åœ¨æ³¨å†Œ: %AX%
+echo ÕýÔÚ×¢²á: %AX%
+rem 1.0.6 ÆðÒ»¸ö .ax Ö»ÓÐÒ»¸öÂË¾µ CLSID£»×¢²áÊ±»á×Ô¶¯Çå³ýÔçÆÚË«¹ÜÏß³¢ÊÔÒÅÁôµÄ C9B3 ÓÄÁéÌõÄ¿
 "%SystemRoot%\System32\regsvr32.exe" /s "%AX%"
 if errorlevel 1 (
-    echo [é”™è¯¯] regsvr32 è¿”å›žå¤±è´¥ã€‚
-    echo æ‰‹åŠ¨æ‰§è¡Œå¯çœ‹åˆ°å…·ä½“åŽŸå› :  regsvr32 "%AX%"
+    echo [´íÎó] ×¢²áµ÷ÓÃ·µ»ØÊ§°Ü¡£
+    echo ÊÖ¶¯Ö´ÐÐ¿É¿´µ½¾ßÌåÔ­Òò:  regsvr32 "%AX%"
     pause & exit /b 1
 )
 
-reg query "HKCR\CLSID\%CLSID%\InprocServer32" >nul 2>&1
+reg query "HKCR\CLSID\%CLSID_TIP%\InprocServer32" >nul 2>&1
 if errorlevel 1 (
-    echo [é”™è¯¯] æ³¨å†Œå‘½ä»¤æ‰§è¡Œäº†ï¼Œä½†æ³¨å†Œè¡¨é‡Œæ²¡æœ‰å†™è¿›åŽ»ã€‚
-    echo è¯·ä»¥ç®¡ç†å‘˜èº«ä»½é‡è¯•ï¼Œæˆ–æ£€æŸ¥æ€æ¯’è½¯ä»¶æ‹¦æˆªã€‚
+    echo [´íÎó] ×¢²áÃüÁîÖ´ÐÐÁË£¬µ« CLSID Ã»Ð´½ø×¢²á±í¡£
+    echo ÇëÒÔ¹ÜÀíÔ±Éí·ÝÖØÊÔ£¬»ò¼ì²éÉ±¶¾Èí¼þÀ¹½Ø¡£
     pause & exit /b 1
 )
 
 echo.
-echo æ³¨å†ŒæˆåŠŸã€‚
-echo   æ˜¾ç¤ºå: BassMax Audio Enhancer
-echo   è·¯å¾„  : %AX%
+echo ×¢²á³É¹¦£¨Ò»¸öÂË¾µ + Ò»¸öÊôÐÔÒ³£©¡£
+echo   Â·¾¶: %AX%
 echo.
-echo çŽ°åœ¨æ‰“å¼€ MPC-HC / PotPlayer:
-echo   MPC-HC   : é€‰é¡¹ - å¤–éƒ¨æ»¤é•œ - æ·»åŠ æ»¤é•œ, é€‰ä¸­ BassMax Audio Enhancer, å‹¾é€‰"ä¼˜å…ˆ"
-echo   PotPlayer: æŒ‰ F5 - æ»¤é•œ - éŸ³é¢‘æ»¤é•œ - æ·»åŠ , é€‰ä¸­åŽè®¾ä¸º"å§‹ç»ˆä½¿ç”¨"
-echo è‹¥åˆ—è¡¨é‡Œè¿˜æ²¡å‡ºçŽ°, è¯·å…ˆå®Œå…¨é€€å‡ºæ’­æ”¾å™¨å†æ‰“å¼€(æ’­æ”¾å™¨åªåœ¨å¯åŠ¨æ—¶è¯»å–æ»¤é•œåˆ—è¡¨)ã€‚
+echo ÔÚ¸÷²¥·ÅÆ÷ÀïÌí¼ÓÎªÍâ²¿/ÏµÍ³ÒôÆµÂË¾µ:
+echo   MPC-HC   : Ñ¡Ïî - Íâ²¿ÂË¾µ - Ìí¼ÓÂË¾µ, Ñ¡ "BassMax Audio Enhancer", ¹´Ñ¡"ÓÅÏÈ"
+echo   PotPlayer: F5 - ÂË¾µ - ÒôÆµÂË¾µ - Ìí¼ÓÏµÍ³ÂË¾µ, Ñ¡ "BassMax Audio Enhancer"
+echo   MPC-BE   : ²»ÒªÓÃ±¾ÂË¾µ£¡Çë¸ÄÓÃ bassmax_decoder.ax
+echo              £¨MPC-BE ÄÚÖÃ Audio Switcher »áµ²×¡ËùÓÐ PCM Íâ²¿ÂË¾µ,
+echo                ±ØÐëÓÃ"½âÂëÆ÷½ÇÉ«"µÄÍâ¿Ç, ¼û bassmax_decoder\install.bat£©
+echo ÈôÁÐ±íÀï»¹Ã»³öÏÖ, ÇëÏÈÍêÈ«ÍË³ö²¥·ÅÆ÷ÔÙ´ò¿ª£¨²¥·ÅÆ÷Ö»ÔÚÆô¶¯Ê±¶ÁÈ¡ÂË¾µÁÐ±í£©¡£
 echo.
-echo æ’­æ”¾å™¨æ²¡å¼€æ—¶ä¹Ÿèƒ½æ”¹è®¾ç½® â€”â€” ä¸éœ€è¦é¢å¤– EXE, èµ°ç³»ç»Ÿè‡ªå¸¦çš„ rundll32:
+echo ²¥·ÅÆ÷Ã»¿ªÊ±Ò²ÄÜ¸ÄÉèÖÃ ¡ª¡ª ²»ÐèÒª¶îÍâ EXE, ×ßÏµÍ³×Ô´øµÄ rundll32:
 echo    rundll32.exe "%AX%",BassMaxConfig
 echo.
 pause

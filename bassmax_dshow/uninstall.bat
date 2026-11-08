@@ -1,20 +1,21 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 setlocal
 set "AX=%~dp0bassmax_dshow.ax"
 
 net session >nul 2>&1
 if errorlevel 1 (
-    echo [é”™è¯¯] éœ€è¦ç®¡ç†å‘˜æƒé™ã€‚è¯·å³é”®æœ¬æ–‡ä»¶ - ä»¥ç®¡ç†å‘˜èº«ä»½è¿è¡Œã€‚
+    echo [´íÎó] ÐèÒª¹ÜÀíÔ±È¨ÏÞ¡£ÇëÓÒ¼ü±¾ÎÄ¼þ - ÒÔ¹ÜÀíÔ±Éí·ÝÔËÐÐ¡£
     pause & exit /b 1
 )
 
 if exist "%AX%" (
     "%SystemRoot%\System32\regsvr32.exe" /u /s "%AX%"
 ) else (
-    echo [æç¤º] å½“å‰ç›®å½•æ²¡æœ‰ .axï¼Œæ”¹ç”¨ç³»ç»Ÿ regsvr32 æŒ‰ CLSID æ— æ³•å¸è½½ï¼Œè¯·æŠŠ .ax æ”¾å›žæœ¬ç›®å½•å†è¿è¡Œæœ¬è„šæœ¬ã€‚
+    echo [ÌáÊ¾] µ±Ç°Ä¿Â¼Ã»ÓÐ .ax£¬Çë°Ñ .ax ·Å»Ø±¾Ä¿Â¼ÔÙÔËÐÐ±¾½Å±¾¡£
     pause & exit /b 1
 )
 
-echo å·²å¸è½½ BassMax Audio Enhancerã€‚
+echo ÒÑÐ¶ÔØ BassMax Audio Enhancer£¨º¬ÔçÆÚË«¹ÜÏß³¢ÊÔÒÅÁôµÄ MPC-BE °æÌõÄ¿ C9B3£©¡£
+echo ÈôÒªÐ¶ÔØ MPC-BE ×¨ÓÃ½âÂëÆ÷¿Ç£¬ÇëÁíÍâÔËÐÐ bassmax_decoder\uninstall.bat¡£
 pause

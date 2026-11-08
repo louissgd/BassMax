@@ -12,7 +12,7 @@ export LIB="$SDK/Lib/10.0.26100.0/um/x64;$SDK/Lib/10.0.26100.0/ucrt/x64;$MSVC/li
 mkdir -p obj
 # baseclasses 全部编译, 仅排除 dllentry.cpp (其定义 DllMain/类厂, 我们用自己的 dllmain.cpp)
 SRCS=$(ls baseclasses/*.cpp | grep -v 'dllentry.cpp')
-SRCS="$SRCS bassmax_filter.cpp bassmax_settings.cpp bassmax_page.cpp bassmax_tray.cpp dllmain.cpp"
+SRCS="$SRCS bassmax_dsp.cpp bassmax_filter.cpp bassmax_settings.cpp bassmax_page.cpp bassmax_tray.cpp dllmain.cpp"
 
 echo "==== RESOURCE ===="
 RC="$SDK/bin/10.0.26100.0/x64/rc.exe"

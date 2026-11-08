@@ -1,10 +1,10 @@
-// bassmax_filter.h  —  BassMax 64-bit DirectShow 音频变换滤镜
+// bassmax_filter.h  —  BassMax 64-bit DirectShow 音频变换滤镜 (CTransInPlace 版)
 //
-// 包装 bassmax::Core DSP 核心 (bassmax_core.hpp)。
+// 包装 bassmax::Core DSP 核心 (bassmax_core.hpp / bassmax_dsp.hpp)。
 // 输入格式: 8/16/24/32-bit 整数 PCM 与 32/64-bit IEEE float, 1~8 声道, 任意常用采样率。
 // 输出格式与输入完全一致 (就地变换, 不重采样、不复制), 声道按对处理 (5.1/7.1 也支持)。
 //
-// ---- 为什么是 CTransInPlaceFilter 而不是 CTransformFilter (1.0.4) --------------
+// ---- 为什么这个版本是 CTransInPlaceFilter (1.0.4 起的决定) ---------------------
 // 1.0.3 及之前用 CTransformFilter: 输入/输出各一套媒体类型, 输出类型只能由
 // GetMediaType 静态生成, 而 CTransformInputPin::CheckMediaType 会拿"新输入类型"
 // 去和"已连接但已经过期的输出类型"做 CheckTransform 精确比对。
@@ -23,53 +23,16 @@
 //   * 不需要 GetMediaType / CheckTransform / DecideBufferSize, 少两个可出错的地方。
 // 另外: 无法处理的格式 (DTS/AC3 passthrough、>8 声道等) 一律原样透传, 绝不返回
 // 失败 —— 一个音效滤镜再怎么样都不该把播放器的图搞崩。
+//
+// ---- 1.0.6: 回归单管线 -------------------------------------------------------
+// 早期双管线尝试曾为 MPC-BE 在同一 .ax 里再注册一个 CTransformFilter 版 (C9B3)。查
+// MPC-BE 官方源码后确认这条路走不通: 内置 Audio Switcher 以最高 merit 无条件
+// 占位, 任何 PCM→PCM 外部滤镜都进不了链路 (被创建后立刻销毁)。MPC-BE 现由
+// 独立的 bassmax_decoder.ax (C9B4, 解码器角色) 接管, 故 C9B3 已移除。
+// 本文件保持 CTIP 不变, 继续服务 PotPlayer / MPC-HC。
 #pragma once
 #include <streams.h>
-#include <vector>
-#include "bassmax_core.hpp"
-
-// 本滤镜 CLSID (64-bit)。注册到 HKCR\CLSID 供 64 位播放器使用。
-static const GUID CLSID_BassMax = {
-    0xc41f7d22, 0x6b18, 0x4a93, {0x8e,0x52,0x1d,0x7a,0x4f,0x60,0xc9,0xb1}
-};
-// 属性页 CLSID (同一个 .ax 里导出, 播放器按此 CLSID 创建属性页)
-static const GUID CLSID_BassMaxPage = {
-    0xc41f7d22, 0x6b18, 0x4a93, {0x8e,0x52,0x1d,0x7a,0x4f,0x60,0xc9,0xb2}
-};
-
-// ---- 多声道保护 --------------------------------------------------------------
-// 实测 (7.1 + 耳机): 滤镜确实生效, 但听感发糊、一直顶着上限。原因是结构性的 ——
-// 每对声道各自把动态拉到接近满电平, 下混求和后必然远超 0 dBFS, 限幅器反复触发。
-// 所以输入 > 2 声道时把驱动自动压到上限。
-//   * 只压不抬: 用户本来就设得比 60% 低, 原样保留;
-//   * 注册表里的值一个字节都不改: 切回立体声立刻恢复用户原本的驱动;
-//   * 单独提成纯函数是为了能脱离 DirectShow 直接单测。
-static const float kBassMaxMultiChDriveCap = 0.60f;
-
-inline float BassMaxEffectiveDrive(float drive, int channels) {
-    if (channels > 2 && drive > kBassMaxMultiChDriveCap) return kBassMaxMultiChDriveCap;
-    return drive;
-}
-
-// KSDATAFORMAT 子类型 (用于解析 WAVEFORMATEXTENSIBLE, 避免链接 initguid)。
-static const GUID KSDATAFORMAT_SUBTYPE_PCM_GUID = {
-    0x00000001, 0x0000, 0x0010, {0x80,0x00,0x00,0xaa,0x00,0x38,0x9b,0x71}
-};
-static const GUID KSDATAFORMAT_SUBTYPE_IEEE_FLOAT_GUID = {
-    0x00000003, 0x0000, 0x0010, {0x80,0x00,0x00,0xaa,0x00,0x38,0x9b,0x71}
-};
-
-// 解析后的音频格式 (只描述"能不能处理", 不能处理时 m_processable=false 走透传)
-struct BassMaxFmt {
-    bool  isFloat = false;
-    int   bytes   = 2;      // 容器位深 / 8 (每声道每样本字节数)
-    int   ch      = 2;
-    DWORD sr      = 44100;
-    bool  ok      = false;  // true = 我们改得动这路音频
-};
-
-// 从媒体类型解析格式 (纯函数, 便于单测)
-BassMaxFmt BassMaxParseFmt(const CMediaType* mt);
+#include "bassmax_dsp.h"
 
 class BassMaxFilter : public CTransInPlaceFilter, public ISpecifyPropertyPages {
 public:
@@ -93,30 +56,12 @@ public:
     // ---- 参数 (全局共享, 见 bassmax_settings) ----
     void  SetBass(float b);    // dB
     void  SetDrive(float d);   // 0..1
-    float GetBass()  const { return m_params.bass; }
-    float GetDrive() const { return m_params.drive; }
+    float GetBass()  const { return m_dsp.Bass(); }
+    float GetDrive() const { return m_dsp.Drive(); }
 
     void  ApplySettings();     // 从全局设置同步到 DSP
 
 private:
-    void ApplyToAllCores();
-    // 应用新格式: 重建每个声道对的 Core, 返回是否可处理
-    bool SetFormatFromType(const CMediaType* mt);
-    // 按 m_ch 补齐 Core 数量并 reset
-    void RebuildCores();
-    // 保证 scratch 能装下 frames 帧, 失败返回 false (调用方降级为透传)
-    bool ReserveScratch(size_t frames);
-
-    std::vector<bassmax::Core> m_cores;   // 每个声道对一份 (2.0 -> 1, 5.1 -> 3, 7.1 -> 4)
-    std::vector<float> m_scratch;         // 单对声道的交错缓冲
-    bassmax::Params  m_params;
-    volatile LONG m_gen = -1;             // 已应用的设置代号
-
-    DWORD m_sr         = 0;               // 采样率
-    int   m_ch         = 0;               // 声道数
-    int   m_bytes      = 2;               // 每样本字节数 (容器位深/8)
-    int   m_frameBytes = 0;               // 一帧字节数 = m_bytes * m_ch
-    bool  m_isFloat    = false;           // 是否 IEEE float
-    bool  m_processable = false;          // false = 原样透传 (压缩格式 / 声道过多 / 位深怪)
-    bool  m_trayOn     = false;
+    BassMaxDsp m_dsp;
+    bool  m_trayOn = false;
 };
