@@ -1,0 +1,7 @@
+// Keep this file PURE ASCII: rc.exe parses it as ANSI(CP936). Non-ASCII bytes in
+// comments can swallow a following line and silently break macro expansion,
+// which registers the resource under a STRING name instead of the numeric ID.
+// IDs are written literally on purpose; must match resource.h.
+// Icon file names carry no path: rc.exe finds them via /I<Claw root>.
+201  ICON  "bassmax.ico"
+202  ICON  "bassmax_off.ico"

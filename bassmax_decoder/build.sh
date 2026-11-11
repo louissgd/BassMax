@@ -7,6 +7,7 @@
 set +e
 export MSYS_NO_PATHCONV=1
 CL="D:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe"
+RC="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe"
 SDK="C:/Program Files (x86)/Windows Kits/10"
 MSVC="D:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231"
 export INCLUDE="$SDK/Include/10.0.26100.0/um;$SDK/Include/10.0.26100.0/shared;$SDK/Include/10.0.26100.0/ucrt;$MSVC/include"
@@ -15,8 +16,12 @@ export LIB="$SDK/Lib/10.0.26100.0/um/x64;$SDK/Lib/10.0.26100.0/ucrt/x64;$MSVC/li
 mkdir -p obj
 BASE="../bassmax_dshow/baseclasses"
 SRCS=$(ls "$BASE"/*.cpp | grep -v 'dllentry.cpp')
-SRCS="$SRCS bassmax_decoder.cpp ../bassmax_dshow/bassmax_dsp.cpp ../bassmax_dshow/bassmax_settings.cpp"
+SRCS="$SRCS bassmax_decoder.cpp bassmax_decoder_tray.cpp ../bassmax_dshow/bassmax_dsp.cpp ../bassmax_dshow/bassmax_settings.cpp"
 INC="-I$BASE -I../bassmax_dshow -I.."
+
+echo "==== RC (embed tray icons) ===="
+"$RC" /nologo /I. /I.. /fo"obj/bassmax_decoder.res" "bassmax_decoder.rc" 2>&1 | tee build_rc.log
+echo "rc exit: ${PIPESTATUS[0]}"
 
 echo "==== COMPILE ===="
 "$CL" /nologo /c /utf-8 /MD /O2 /EHsc /DNDEBUG $INC $SRCS /Foobj/ 2>&1 | tee build_compile.log
@@ -26,7 +31,8 @@ echo "==== LINK ===="
 "$CL" /nologo /MD /O2 /DNDEBUG /LD /Febassmax_decoder.ax obj/*.obj \
   strmiids.lib uuid.lib ole32.lib oleaut32.lib user32.lib gdi32.lib \
   kernel32.lib advapi32.lib winmm.lib comctl32.lib shell32.lib \
-  /link /EXPORT:DllGetClassObject /EXPORT:DllCanUnloadNow \
+  /link "obj/bassmax_decoder.res" \
+        /EXPORT:DllGetClassObject /EXPORT:DllCanUnloadNow \
         /EXPORT:DllRegisterServer /EXPORT:DllUnregisterServer 2>&1 | tee build_link.log
 echo "link exit: ${PIPESTATUS[0]}"
 ls -l bassmax_decoder.ax 2>/dev/null

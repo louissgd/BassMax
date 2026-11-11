@@ -439,6 +439,14 @@ MPC-BE graph: [Source] --(压缩)--> [BMD.In]   [BMD.Out] --(PCM)--> [Audio Swit
 
 > 仓库不含任何二进制（`.ax` / `.exe` 已被 `.gitignore` 排除）：先运行 `bassmax_decoder/build.sh` 编出 `bassmax_decoder.ax`，成品二进制走 GitHub Releases。`install.bat` 优先用同目录的 `reg_helper.exe` 调 `DllRegisterServer`（`regsvr32` 常被安全策略当 LOLBin 拦截），缺失时自动回退 `regsvr32`；要生成它请执行 `bash bassmax_dshow/tools/build_reg.sh` 并把结果放到 `.ax` 同目录。
 
+**托盘开关（1.0.7 新增）**：新壳不做属性页，改为在播放器**进程内**挂托盘图标 —— 播放时出现、滤镜释放后自动消失，不需要额外开任何程序，也不存在"关掉设置窗口把播放器带走"。
+
+- **左键 / 右键单击都 = 开/关总开关**，与 `bassmax_dshow.ax` 的右键行为对齐。单击直接调本 DLL 的 `SetSettings()`，`s_gen` 立刻递增，音频线程下一拍 `Tick()` 重建系数；关闭是 Core 逐样本 bypass，不重建 graph、不切音轨。
+- 托盘只是 `Shell_NotifyIcon` + 隐藏窗口（`BassMaxDecoderTrayWnd`）+ 一个消息线程，**不注册任何 CLSID、不实现 `ISpecifyPropertyPages`**，与属性页 `CLSID_BassMaxPage` 的 `InprocServer32` 抢注冲突零交集。只认 `WM_*BUTTONUP`，不处理 `WM_CONTEXTMENU`，避免某些 Windows 版本右键发两条消息导致翻转两次。
+- 图标内嵌 `bassmax.ico`（开启，蓝色渐变柱）/ `bassmax_off.ico`（关闭，纯灰）的全部尺寸；`.ax` 同目录放同名 ico 可覆盖，换图标不用重编译。`HKCU\Software\BassMax\TrayIcon=0` 可关掉图标。
+- 线程每进程只开一个、活到进程结束；`DecoderTrayAddRef/Release` 只发异步消息，绝不在滤镜析构里等线程（那条路径常在播放器拆图线程上，阻塞就是画面卡顿）。400ms 轮询只用于同步外部改动。
+- 已知：**双击会翻转两次、回到原状**（单击切换的固有行为，旧 `.ax` 右键也一样）。两张 `.ax` 同时启用会出现两个托盘图标。
+
 **回退机制（解码器壳第二版，修复"无法渲染文件"）**：
 
 外部滤镜被配成 `PREFERRED + Audio/NULL 通配` 时，MPC-BE 会把**所有**音频流先塞给本滤镜。早期版本要等 `CompleteConnect` 里私有 LAV 图建失败才报错，这时整张图已经没救了，播放器直接弹"无法渲染文件"且不会回退到内置解码器。现在改成：

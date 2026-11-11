@@ -35,6 +35,7 @@
 #include "bassmax_core.hpp"
 #include "bassmax_dsp.h"
 #include "bassmax_settings.h"
+#include "bassmax_decoder_tray.h"
 
 // 本滤镜 CLSID (与 bassmax_dshow.ax 的 C9B1/C9B2/C9B3 同族, 用 C9B4)
 static const GUID CLSID_BassMaxDecoder = {
@@ -385,6 +386,9 @@ BmdFilter::BmdFilter(LPUNKNOWN pUnk, HRESULT* phr)
     : CBaseFilter(NAME("BassMax Audio Decoder (LAV Wrapper)"), pUnk, &m_cs, CLSID_BassMaxDecoder) {
     BLog("=== CREATE BmdFilter ===");
     bassmax::InitSettings();
+    // 进程内托盘: 播放时图标出现, 单击即可切总开关。不注册 COM 类,
+    // 与属性页 (ISpecifyPropertyPages / CLSID ...C9B2) 完全无关。
+    bassmax::DecoderTrayAddRef();
     HRESULT hr = S_OK;
     m_in  = new BmdInPin(this, this, &m_cs, &hr);
     m_out = new BmdOutPin(this, this, &m_cs, &hr);
@@ -444,6 +448,8 @@ BmdFilter::~BmdFilter() {
     BLog("=== DESTROY BmdFilter === samples=%ld bytes=%lld changed=%ld enabled=%d",
          (long)m_statSamples, (long long)m_statBytes, (long)m_statChanged,
          (int)bassmax::GetSettings().enabled);
+    // 只发一条异步消息隐藏图标, 不等待托盘线程 —— 析构可能跑在拆图线程上
+    bassmax::DecoderTrayRelease();
     if (m_lavInMem) { m_lavInMem->Release(); m_lavInMem = nullptr; }
     if (m_lavIn)    { m_lavIn->Release();    m_lavIn = nullptr; }
     if (m_lavOut)   { m_lavOut->Release();   m_lavOut = nullptr; }
